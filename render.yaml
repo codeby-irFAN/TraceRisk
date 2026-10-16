@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: tracerisk
+    runtime: node
+    region: singapore
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm run server
+    healthCheckPath: /api/health
+    envVars:
+      - key: TINYFISH_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY

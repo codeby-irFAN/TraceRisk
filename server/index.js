@@ -1,8 +1,13 @@
 import 'dotenv/config';
 import express from 'express';
+import path from 'node:path';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const app = express();
 const PORT = Number(process.env.PORT || 8787);
+const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const DIST_DIR = path.join(PROJECT_ROOT, 'dist');
 
 // TinyFish: live search + webpage extraction.
 const TINYFISH_SEARCH = 'https://api.search.tinyfish.ai/';
@@ -1711,8 +1716,20 @@ function trimCache(cache, maxEntries) {
   while (cache.size > maxEntries) cache.delete(cache.keys().next().value);
 }
 
-app.listen(PORT, '127.0.0.1', () => {
-  console.log(`TraceRisk API listening on http://127.0.0.1:${PORT}`);
+// In production, serve the built Vite app from the same origin as the API.
+// Locally, Vite continues to serve the frontend and proxy /api requests to Express.
+if (existsSync(path.join(DIST_DIR, 'index.html'))) {
+  app.use(express.static(DIST_DIR));
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' || req.path.startsWith('/api/')) return next();
+    res.sendFile(path.join(DIST_DIR, 'index.html'), (error) => {
+      if (error) next(error);
+    });
+  });
+}
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`TraceRisk server listening on port ${PORT}`);
   console.log(`TinyFish: ${process.env.TINYFISH_API_KEY ? 'configured' : 'missing key (.env)'}`);
   console.log('Weather API: Open-Meteo free non-commercial endpoints (automatic geocoding; no API key)');
   console.log(
