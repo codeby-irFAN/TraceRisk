@@ -3,6 +3,7 @@
 TraceRisk is a source-led travel-awareness dashboard for checking a destination in India before a trip. It combines targeted web searches, webpage extraction, weather and river-flow forecasts, and an AI-assisted evidence summary to help travellers review potential issues for their selected dates.
 
 > **Important:** TraceRisk is a prototype for travel awareness, not an official government safety rating, emergency service, or guarantee of safety. Verify important information with official authorities and local sources before travelling.
+Demo Video : https://drive.google.com/file/d/1RIJOVODbjnc7rzDPaioiRQqtznZLq5oE/view?usp=drivesdk
 
 ## Features
 
