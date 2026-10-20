@@ -17,8 +17,10 @@ const TINYFISH_FETCH = 'https://api.fetch.tinyfish.ai/';
 const OPEN_METEO_GEOCODING = 'https://geocoding-api.open-meteo.com/v1/search';
 const OPEN_METEO_FORECAST = 'https://api.open-meteo.com/v1/forecast';
 const OPEN_METEO_FLOOD = 'https://flood-api.open-meteo.com/v1/flood';
-const GEOCODING_TIMEOUT_MS = 5_000;
-const OPEN_METEO_TIMEOUT_MS = 10_000;
+const GEOCODING_TIMEOUT_MS = 10_000;
+const OPEN_METEO_TIMEOUT_MS = 20_000;
+const OPEN_METEO_MIN_GAP_MS = 1_500;
+const OPEN_METEO_CACHE_TTL_MS = 10 * 60 * 1_000;
 
 // Keep individual stage limits below the 100-second overall request budget.
 const SEARCH_TIMEOUT_MS = 7_000;
@@ -30,6 +32,10 @@ const REQUEST_BUDGET_MS = 100_000;
 const CACHE_TTL_MS = 45_000;
 
 const analysisCache = new Map();
+
+const openMeteoResponseCache = new Map();
+let openMeteoQueue = Promise.resolve();
+
 const SEARCH_CONCURRENCY = 8;
 const MAX_WEB_SOURCES = 20;
 const FETCH_BATCH_SIZE = 10;
@@ -359,6 +365,94 @@ async function analyzeTrip({ destination, startDate, endDate }) {
 }
 
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function openMeteoJson(
+  url,
+  options = {},
+  timeoutMs = OPEN_METEO_TIMEOUT_MS
+) {
+  const cacheKey = String(url);
+
+  function readCache() {
+    const cached = openMeteoResponseCache.get(cacheKey);
+
+    if (!cached) return undefined;
+
+    if (Date.now() - cached.createdAt >= OPEN_METEO_CACHE_TTL_MS) {
+      openMeteoResponseCache.delete(cacheKey);
+      return undefined;
+    }
+
+    return cached.data;
+  }
+
+  const cached = readCache();
+  if (cached !== undefined) return cached;
+
+  const run = async () => {
+    // A previous queued request may already have filled the cache.
+    const queuedCached = readCache();
+    if (queuedCached !== undefined) return queuedCached;
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const data = await fetchJson(
+          url,
+          {
+            ...options,
+            _skip429Retry: true,
+          },
+          timeoutMs
+        );
+
+        openMeteoResponseCache.set(cacheKey, {
+          createdAt: Date.now(),
+          data,
+        });
+
+        trimCache(openMeteoResponseCache, 100);
+
+        return data;
+      } catch (error) {
+        if (Number(error?.status) !== 429 || attempt === 2) {
+          console.error("[TraceRisk] Open-Meteo request failed:", {
+            url: cacheKey,
+            status: error?.status,
+            message: error?.message,
+          });
+
+          throw error;
+        }
+
+        const backoff = 1_500 * (2 ** attempt);
+        const retryAfter = Number(error?.retryAfterMs) || 0;
+        const waitMs = Math.max(backoff, retryAfter);
+
+        console.warn(
+          `[TraceRisk] Open-Meteo HTTP 429; retrying in ${waitMs}ms`
+        );
+
+        await sleep(waitMs);
+      }
+    }
+
+    throw new Error("Open-Meteo retry attempts exhausted");
+  };
+
+  // Serialize all Open-Meteo requests within this Node process.
+  const request = openMeteoQueue.then(run, run);
+
+  openMeteoQueue = request.then(
+    () => sleep(OPEN_METEO_MIN_GAP_MS),
+    () => sleep(OPEN_METEO_MIN_GAP_MS)
+  );
+
+  return request;
+}
+
 // Open-Meteo provides automatic geocoding, daily forecasts and river-discharge
 // forecasts without an API key for non-commercial use. Coordinates are resolved
 // internally from the destination text; the frontend does not ask travellers for them.
@@ -425,8 +519,21 @@ async function fetchOpenMeteoHazards(destination, startDate, endDate) {
   floodUrl.searchParams.set('timezone', 'auto');
 
   const [forecastAttempt, floodAttempt] = await Promise.allSettled([
-    fetchJson(forecastUrl, { headers: { 'User-Agent': 'TraceRisk-App/3.2.0' } }, OPEN_METEO_TIMEOUT_MS),
-    fetchJson(floodUrl, { headers: { 'User-Agent': 'TraceRisk-App/3.2.0' } }, OPEN_METEO_TIMEOUT_MS),
+    openMeteoJson(
+      forecastUrl,
+      {
+        headers: { 'User-Agent': 'TraceRisk-App/3.2.0' },
+      },
+      OPEN_METEO_TIMEOUT_MS
+    ),
+
+    openMeteoJson(
+      floodUrl,
+      {
+        headers: { 'User-Agent': 'TraceRisk-App/3.2.0' },
+      },
+      OPEN_METEO_TIMEOUT_MS
+    ),
   ]);
 
   const sources = [];
@@ -621,7 +728,13 @@ async function geocodeDestination(destination) {
     url.searchParams.set('countryCode', 'IN');
 
     try {
-      const data = await fetchJson(url, { headers: { 'User-Agent': 'TraceRisk-App/3.2.0' } }, GEOCODING_TIMEOUT_MS);
+      const data = await openMeteoJson(
+        url,
+        {
+          headers: { 'User-Agent': 'TraceRisk-App/3.2.0' },
+        },
+        GEOCODING_TIMEOUT_MS
+      );
       const results = Array.isArray(data?.results) ? data.results : [];
       if (!results.length) continue;
 
@@ -1617,49 +1730,111 @@ function buildFallbackBriefing(destination, issues) {
   return `${issues.length} potential travel-relevant signal(s) surfaced for ${destination}. The highest matched signal is ${highest.title.toLowerCase()} (${highest.severity} keyword-based triage). Review the cited source and confirm the situation with the relevant authority or operator before changing travel plans.`;
 }
 
+
 async function fetchJson(url, options = {}, timeoutMs = 10_000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
-    const response = await fetch(url, { ...options, signal: controller.signal });
-    
-    // If rate-limited (HTTP 429), wait 1.5 seconds and retry once
-    if (response.status === 429 && !options._isRetry) {
+    const fetchOptions = { ...options };
+    const skip429Retry = fetchOptions._skip429Retry === true;
+
+    delete fetchOptions._skip429Retry;
+    delete fetchOptions._isRetry;
+
+    const response = await fetch(url, {
+      ...fetchOptions,
+      signal: controller.signal,
+    });
+
+    // Non-Open-Meteo callers retain the existing single retry.
+    // Open-Meteo retries are handled by openMeteoJson().
+    if (
+      response.status === 429 &&
+      !options._isRetry &&
+      !skip429Retry
+    ) {
       clearTimeout(timer);
-      await new Promise((res) => setTimeout(res, 1500));
-      return fetchJson(url, { ...options, _isRetry: true }, timeoutMs);
+      await sleep(1_500);
+
+      return fetchJson(
+        url,
+        { ...options, _isRetry: true },
+        timeoutMs
+      );
     }
 
     const text = await response.text();
     let data;
+
     try {
       data = text ? JSON.parse(text) : {};
     } catch {
       data = { message: text.slice(0, 400) };
     }
+
     if (!response.ok) {
-      const apiMessage = data?.error?.message || data?.message || data?.error || `Request failed (${response.status})`;
-      const message = typeof apiMessage === 'string' ? apiMessage : JSON.stringify(apiMessage);
+      // Open-Meteo commonly returns { error: true, reason: "..." }.
+      const apiMessage =
+        data?.reason ||
+        data?.error?.message ||
+        data?.message ||
+        (typeof data?.error === 'string' ? data.error : null) ||
+        `Request failed (${response.status})`;
+
+      const message =
+        typeof apiMessage === 'string'
+          ? apiMessage
+          : JSON.stringify(apiMessage);
+
       const error = new Error(
         response.status === 401 || response.status === 403
           ? `${message}. Check the API key and account access.`
-          : `${message} (HTTP ${response.status})`,
+          : `${message} (HTTP ${response.status})`
       );
+
       error.status = response.status;
+
+      const retryAfter = response.headers.get('retry-after');
+
+      if (retryAfter) {
+        const seconds = Number(retryAfter);
+        const retryDate = Date.parse(retryAfter);
+
+        const retryAfterMs = Number.isFinite(seconds)
+          ? seconds * 1_000
+          : Number.isFinite(retryDate)
+            ? Math.max(0, retryDate - Date.now())
+            : 0;
+
+        if (retryAfterMs > 0) {
+          error.retryAfterMs = retryAfterMs;
+        }
+      }
+
       throw error;
     }
+
     return data;
   } catch (error) {
-    if (error?.name === 'AbortError' || error?.name === 'TimeoutError') {
-      const timeoutError = new Error(`Request timed out after ${Math.round(timeoutMs / 1000)} seconds`);
+    if (
+      error?.name === 'AbortError' ||
+      error?.name === 'TimeoutError'
+    ) {
+      const timeoutError = new Error(
+        `Request timed out after ${Math.round(timeoutMs / 1_000)} seconds`
+      );
+
       timeoutError.name = 'TimeoutError';
       throw timeoutError;
     }
+
     throw error;
   } finally {
     clearTimeout(timer);
   }
 }
+
 
 async function settleWithConcurrency(items, concurrency, task) {
   const outcomes = new Array(items.length);
