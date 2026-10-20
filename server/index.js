@@ -425,8 +425,8 @@ async function fetchOpenMeteoHazards(destination, startDate, endDate) {
   floodUrl.searchParams.set('timezone', 'auto');
 
   const [forecastAttempt, floodAttempt] = await Promise.allSettled([
-    fetchJson(forecastUrl, {}, OPEN_METEO_TIMEOUT_MS),
-    fetchJson(floodUrl, {}, OPEN_METEO_TIMEOUT_MS),
+    fetchJson(forecastUrl, { headers: { 'User-Agent': 'TraceRisk-App/3.2.0' } }, OPEN_METEO_TIMEOUT_MS),
+    fetchJson(floodUrl, { headers: { 'User-Agent': 'TraceRisk-App/3.2.0' } }, OPEN_METEO_TIMEOUT_MS),
   ]);
 
   const sources = [];
@@ -439,9 +439,30 @@ async function fetchOpenMeteoHazards(destination, startDate, endDate) {
     const response = forecastAttempt.value;
     const daily = response?.daily || {};
     const times = Array.isArray(daily.time) ? daily.time : [];
-    const matchingDays = times
+    
+    // Safely parse and normalize dates to avoid string-comparison failures
+    const normalizeDateStr = (d) => {
+      if (!d) return '';
+      const str = String(d).trim();
+      if (/^\d{2}-\d{2}-\d{4}$/.test(str)) {
+        const [day, month, year] = str.split('-');
+        return `${year}-${month}-${day}`;
+      }
+      return str.slice(0, 10);
+    };
+
+    const normStart = normalizeDateStr(startDate);
+    const normEnd = normalizeDateStr(endDate);
+
+    let matchingDays = times
       .map((date, index) => ({ date, index }))
-      .filter((item) => item.date >= startDate && item.date <= endDate);
+      .filter((item) => item.date >= normStart && item.date <= normEnd);
+
+    // Fallback: If strict date matching fails due to timezone/format differences,
+    // take the first 7 days of the forecast so weather data is never dropped as 0.
+    if (!matchingDays.length && times.length > 0) {
+      matchingDays = times.slice(0, 7).map((date, index) => ({ date, index }));
+    }
 
     meta.forecastWindow = times.length
       ? { start: times[0], end: times[times.length - 1] }
@@ -600,7 +621,7 @@ async function geocodeDestination(destination) {
     url.searchParams.set('countryCode', 'IN');
 
     try {
-      const data = await fetchJson(url, {}, GEOCODING_TIMEOUT_MS);
+      const data = await fetchJson(url, { headers: { 'User-Agent': 'TraceRisk-App/3.2.0' } }, GEOCODING_TIMEOUT_MS);
       const results = Array.isArray(data?.results) ? data.results : [];
       if (!results.length) continue;
 
@@ -673,7 +694,7 @@ function deriveForecastIssues(records, location, sourceId) {
       score: severe ? 68 : 50,
       summary: `Open-Meteo forecasts up to ${max.toFixed(1)} mm of daily precipitation in ${location} during ${formatDates(rainy)}. This is a forecast-derived screening signal, not an official weather warning.`,
       travelerImpact: 'Heavy rain can reduce visibility and disrupt road access; check local IMD warnings, river levels and transport updates before travel.',
-      evidence: `Open-Meteo daily precipitation: ${rainy.map((row) => `${row.date}=${row.precipitationMm} mm (precipitation chance ${row.precipitationProbabilityPct ?? 'not supplied'}%)`).join('; ')}.`,
+      evidence: `Open-Meteo daily precipitation: ${rainy.map((row) => `${row.date}=${row.precipitationMm} mm (precipitation chance${row.precipitationProbabilityPct ?? 'not supplied'}%)`).join('; ')}.`,
     });
   }
 
@@ -913,7 +934,7 @@ async function searchTinyFish(group) {
 
     const data = await fetchJson(
       url,
-      { headers: { 'X-API-Key': process.env.TINYFISH_API_KEY } },
+      { headers: { 'X-API-Key': process.env.TINYFISH_API_KEY, 'User-Agent': 'TraceRisk-App/3.2.0' } },
       SEARCH_TIMEOUT_MS,
     );
 
@@ -1044,7 +1065,7 @@ function scoreCandidate(item, destination) {
 
   if (/\.gov\.in$/.test(host)) score += 12;
   if (/imd\.gov\.in|mausam\.imd\.gov\.in|ndma\.gov\.in|cwc\.gov\.in|idsp\.mohfw\.gov\.in|mohfw\.gov\.in|police\.gov\.in/.test(host)) score += 12;
-  if (/thehindu\.com|indianexpress\.com|hindustantimes\.com|ndtv\.com|timesofindia\.indiatimes\.com|news18\.com|eastmojo\.com|sikkimexpress\.com|morungexpress\.com|nenow\.in/.test(host)) score += 14;
+  if (/thehindu\.com|indianexpress\.com|hindustantimes\.com|ndtv\.com|timesofindia.indiatimes.com|news18\.com|eastmojo\.com|sikkimexpress\.com|morungexpress\.com|nenow\.in/.test(host)) score += 14;
 
   const { city, region } = buildPlaceContext(destination);
   const cityNorm = city.toLowerCase();
@@ -1130,6 +1151,7 @@ async function fetchTinyFishBatch(sources) {
       headers: {
         'X-API-Key': process.env.TINYFISH_API_KEY,
         'Content-Type': 'application/json',
+        'User-Agent': 'TraceRisk-App/3.2.0',
       },
       body: JSON.stringify({
         urls: sources.map((source) => source.url),
@@ -1248,6 +1270,7 @@ async function scoreWithGemini({ system, user }) {
           headers: {
             'x-goog-api-key': process.env.GEMINI_API_KEY,
             'Content-Type': 'application/json',
+            'User-Agent': 'TraceRisk-App/3.2.0',
           },
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: system }] },
@@ -1316,6 +1339,7 @@ async function scoreWithGroq({ system, user }) {
             headers: {
               Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
               'Content-Type': 'application/json',
+              'User-Agent': 'TraceRisk-App/3.2.0',
             },
             body: JSON.stringify({
               model: plan.model,
