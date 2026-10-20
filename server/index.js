@@ -21,6 +21,7 @@ const GEOCODING_TIMEOUT_MS = 10_000;
 const OPEN_METEO_TIMEOUT_MS = 20_000;
 const OPEN_METEO_MIN_GAP_MS = 1_500;
 const OPEN_METEO_CACHE_TTL_MS = 10 * 60 * 1_000;
+const OPEN_METEO_PROXY_URL = (process.env.OPEN_METEO_PROXY_URL || '').replace(/\/+$/, '');
 
 // Keep individual stage limits below the 100-second overall request budget.
 const SEARCH_TIMEOUT_MS = 7_000;
@@ -59,6 +60,8 @@ app.get('/api/health', (_req, res) => {
     maxWebSources: MAX_WEB_SOURCES,
     scanBudgetMs: REQUEST_BUDGET_MS,
     weatherProvider: 'Open-Meteo (automatic geocoding; no key; non-commercial use)',
+    weatherProxyMode: OPEN_METEO_PROXY_URL ? 'Cloudflare Worker' : 'Direct Open-Meteo',
+    weatherProxyConfigured: Boolean(OPEN_METEO_PROXY_URL && process.env.OPEN_METEO_PROXY_TOKEN),
   });
 });
 
@@ -369,6 +372,27 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function getOpenMeteoRequestUrl(url) {
+  if (!OPEN_METEO_PROXY_URL) return String(url);
+
+  const original = new URL(String(url));
+  const routeByEndpoint = {
+    'geocoding-api.open-meteo.com/v1/search': '/geocoding/search',
+    'api.open-meteo.com/v1/forecast': '/forecast',
+    'flood-api.open-meteo.com/v1/flood': '/flood',
+  };
+  const route = routeByEndpoint[
+    `${original.hostname}${original.pathname}`
+  ];
+  if (!route) throw new Error('Unsupported Open-Meteo endpoint');
+
+  const proxied = new URL(route, `${OPEN_METEO_PROXY_URL}/`);
+  original.searchParams.forEach((value, key) => {
+    proxied.searchParams.set(key, value);
+  });
+  return proxied.toString();
+}
+
 async function openMeteoJson(
   url,
   options = {},
@@ -399,14 +423,23 @@ async function openMeteoJson(
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
-        const data = await fetchJson(
-          url,
-          {
-            ...options,
-            _skip429Retry: true,
-          },
-          timeoutMs
-        );
+        const requestUrl = getOpenMeteoRequestUrl(url);
+        const requestOptions = { ...options, _skip429Retry: true };
+
+        if (OPEN_METEO_PROXY_URL) {
+          const token = process.env.OPEN_METEO_PROXY_TOKEN;
+          if (!token) {
+            throw new Error(
+              'OPEN_METEO_PROXY_TOKEN is required when OPEN_METEO_PROXY_URL is configured'
+            );
+          }
+          requestOptions.headers = {
+            ...(options.headers || {}),
+            Authorization: `Bearer ${token}`,
+          };
+        }
+
+        const data = await fetchJson(requestUrl, requestOptions, timeoutMs);
 
         openMeteoResponseCache.set(cacheKey, {
           createdAt: Date.now(),
