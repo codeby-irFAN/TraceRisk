@@ -1622,6 +1622,14 @@ async function fetchJson(url, options = {}, timeoutMs = 10_000) {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, { ...options, signal: controller.signal });
+    
+    // If rate-limited (HTTP 429), wait 1.5 seconds and retry once
+    if (response.status === 429 && !options._isRetry) {
+      clearTimeout(timer);
+      await new Promise((res) => setTimeout(res, 1500));
+      return fetchJson(url, { ...options, _isRetry: true }, timeoutMs);
+    }
+
     const text = await response.text();
     let data;
     try {
