@@ -12,4 +12,6 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
+      - key: NODE_OPTIONS
+        value: "--dns-result-order=ipv4first"
         
