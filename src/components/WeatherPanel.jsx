@@ -1,4 +1,5 @@
 import { CloudRain, ExternalLink, Info } from 'lucide-react';
+import { prettyDate } from '../utils.js';
 
 export default function WeatherPanel({ weather }) {
   const forecast = Array.isArray(weather.dailyForecast)
@@ -46,6 +47,29 @@ export default function WeatherPanel({ weather }) {
           <strong>{weather.forecastDaysMatched ?? 0}</strong>
         </span>
       </div>
+      {weather.tripDays != null && (
+        <div
+          className={`forecast-coverage forecast-coverage-${weather.forecastCoverage}`}
+        >
+          <strong>
+            Forecast available for {weather.forecastDaysMatched ?? 0} of{' '}
+            {weather.tripDays} trip days
+          </strong>
+          {weather.forecastMissingDateRanges?.length > 0 && (
+            <p>
+              No daily forecast for{' '}
+              {weather.forecastMissingDateRanges
+                .map((range) =>
+                  range.start === range.end
+                    ? prettyDate(range.start)
+                    : `${prettyDate(range.start)} – ${prettyDate(range.end)}`,
+                )
+                .join('; ')}
+              . Conditions on those dates are unknown.
+            </p>
+          )}
+        </div>
+      )}
       {weather.forecastWindow && (
         <p className="weather-window-note">
           Forecast window: {weather.forecastWindow.start} –{' '}

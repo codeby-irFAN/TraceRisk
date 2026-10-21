@@ -144,6 +144,13 @@ test('API validation and a complete scan with fixture providers', async (t) => {
         },
       );
       try {
+        const lookup = await nativeFetch(
+          `${base}/api/locations?destination=Delhi`,
+        );
+        assert.equal(lookup.status, 200);
+        const { locations } = await lookup.json();
+        assert.equal(locations.length, 1);
+        trip.locationId = locations[0].id;
         const response = await post(trip);
         assert.equal(response.status, 200);
         const scan = await response.json();

@@ -8,6 +8,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { severityClass } from '../utils.js';
+import SourceBadges from './SourceBadges.jsx';
 
 const dimensionIcons = {
   'Geopolitical & Civil': ShieldAlert,
@@ -17,7 +18,7 @@ const dimensionIcons = {
   'Micro-Crime Trends': ShieldCheck,
 };
 
-export default function IssueCard({ issue, sources }) {
+export default function IssueCard({ issue, sources, checkedAt }) {
   const Icon = dimensionIcons[issue.dimension] || ShieldAlert;
   return (
     <article className={`issue-card severity-${severityClass(issue.severity)}`}>
@@ -62,6 +63,7 @@ export default function IssueCard({ issue, sources }) {
             >
               <span className="source-favicon">↗</span>
               <span>{source.domain || source.title || source.id}</span>
+              <SourceBadges source={source} checkedAt={checkedAt} />
               <ExternalLink size={11} />
             </a>
           ))}

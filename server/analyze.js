@@ -21,34 +21,43 @@ import {
   normalizeUrl,
   safeDomain,
   sourceTrust,
+  summarizeForecastCoverage,
 } from './utils.js';
-export async function analyzeTrip({ destination, startDate, endDate }) {
+export async function analyzeTrip({
+  destination,
+  startDate,
+  endDate,
+  location,
+}) {
   const queryGroups = buildQueries(destination, startDate, endDate);
   const searchStartedAt = Date.now();
 
   const [searchAttempts, weatherBundle] = await Promise.all([
     settleWithConcurrency(queryGroups, SEARCH_CONCURRENCY, searchTinyFish),
-    fetchOpenMeteoHazards(destination, startDate, endDate).catch((error) => {
-      console.warn(
-        '[TraceRisk] Open-Meteo collection failed:',
-        error?.message || error,
-      );
-      return {
-        sources: [],
-        issues: [],
-        meta: {
-          provider: 'Open-Meteo',
-          geocoded: false,
-          forecastStatus: 'unavailable',
-          floodStatus: 'unavailable',
-          hasDateRelevantData: false,
-          location: null,
-          warnings: [
-            cleanText(error?.message || 'Weather API unavailable', 240),
-          ],
-        },
-      };
-    }),
+    fetchOpenMeteoHazards(destination, startDate, endDate, location).catch(
+      (error) => {
+        console.warn(
+          '[TraceRisk] Open-Meteo collection failed:',
+          error?.message || error,
+        );
+        return {
+          sources: [],
+          issues: [],
+          meta: {
+            provider: 'Open-Meteo',
+            geocoded: false,
+            forecastStatus: 'unavailable',
+            floodStatus: 'unavailable',
+            hasDateRelevantData: false,
+            location: null,
+            ...summarizeForecastCoverage(startDate, endDate, []),
+            warnings: [
+              cleanText(error?.message || 'Weather API unavailable', 240),
+            ],
+          },
+        };
+      },
+    ),
   ]);
 
   const searchResults = searchAttempts.flatMap((attempt, index) => {
@@ -230,6 +239,9 @@ export async function analyzeTrip({ destination, startDate, endDate }) {
     briefing = `LIMITED SOURCE COVERAGE: ${pagesFetched} web page(s) were extracted and ${weatherSources.length} weather/flood API source(s) were available. ${briefing} Verify important conditions with official sources before travel.`;
   }
 
+  if (weatherBundle.meta.forecastCoverage === 'partial') {
+    briefing = `PARTIAL WEATHER COVERAGE: daily forecasts cover ${weatherBundle.meta.forecastDaysMatched} of ${weatherBundle.meta.tripDays} trip days. ${briefing}`;
+  }
   if (weatherBundle.meta.forecastStatus === 'outside_forecast_window') {
     briefing = `WEATHER FORECAST LIMITATION: Open-Meteo's standard forecast did not cover the selected travel dates. ${briefing}`;
   } else if (weatherBundle.meta.forecastStatus === 'unavailable') {

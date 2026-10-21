@@ -2940,3 +2940,124 @@ form > label,
     animation: none !important;
   }
 }
+
+.location-choices {
+  margin: 18px 0 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  min-width: 0;
+}
+.location-choices legend {
+  font-weight: 700;
+  font-size: 12px;
+  padding: 0 5px;
+}
+.location-choices > p {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.location-choice {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px;
+  margin: 5px 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+  font:
+    12px 'DM Sans',
+    sans-serif;
+  letter-spacing: 0;
+}
+.location-choice input,
+.location-choice svg {
+  flex-shrink: 0;
+}
+.location-choice input {
+  accent-color: var(--green);
+}
+.location-choice.is-selected {
+  background: #edf2ff;
+  border-color: var(--green);
+}
+.scan-notice {
+  padding: 16px;
+  border: 1px solid #d3e5e0;
+  border-radius: 12px;
+  background: #eff8f5;
+  color: #285f54;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.cancel-scan {
+  flex-shrink: 0;
+}
+.source-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 7px 0;
+}
+.source-badge {
+  display: inline-block;
+  border: 1px solid #dce3ef;
+  border-radius: 6px;
+  padding: 3px 6px;
+  color: #52627d;
+  background: #f3f6fc;
+  font:
+    10px 'DM Sans',
+    sans-serif;
+  line-height: 1.4;
+}
+.source-badge-official,
+.source-badge-opened {
+  background: #eaf6ef;
+  border-color: #cfe6d8;
+  color: #2c6650;
+}
+.source-badge-snippet,
+.source-badge-old,
+.source-badge-unknown {
+  background: #fff6e5;
+  border-color: #ebd8b0;
+  color: #866329;
+}
+.source-link {
+  flex-wrap: wrap;
+}
+.source-link .source-badges {
+  flex-basis: 100%;
+  margin: 0;
+}
+.forecast-coverage {
+  padding: 14px;
+  margin: 14px 0;
+  border-radius: 12px;
+  background: #eaf6ef;
+  border: 1px solid #cfe6d8;
+  color: #2c6650;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.forecast-coverage p {
+  margin: 6px 0 0;
+}
+.forecast-coverage-partial,
+.forecast-coverage-unavailable {
+  background: #fff6e5;
+  border-color: #ebd8b0;
+  color: #866329;
+}
+@media (max-width: 760px) {
+  .loading-panel {
+    flex-wrap: wrap;
+  }
+  .cancel-scan {
+    margin-left: auto;
+  }
+}

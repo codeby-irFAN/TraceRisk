@@ -28,3 +28,23 @@ export const CACHE_TTL_MS = 45_000;
 export const SEARCH_CONCURRENCY = 8;
 export const MAX_WEB_SOURCES = 20;
 export const FETCH_BATCH_SIZE = 10;
+
+function positiveInteger(name, fallback, max) {
+  const value = Number(process.env[name]);
+  return Number.isInteger(value) && value > 0 && value <= max
+    ? value
+    : fallback;
+}
+
+export const MAX_CONCURRENT_SCANS = positiveInteger(
+  'MAX_CONCURRENT_SCANS',
+  3,
+  20,
+);
+export const SCAN_RATE_LIMIT = positiveInteger('SCAN_RATE_LIMIT', 6, 100);
+export const SCAN_RATE_WINDOW_MS = positiveInteger(
+  'SCAN_RATE_WINDOW_MS',
+  600_000,
+  86_400_000,
+);
+export const TRUST_PROXY_HOPS = positiveInteger('TRUST_PROXY_HOPS', 0, 10);

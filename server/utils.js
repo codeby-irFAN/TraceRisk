@@ -38,6 +38,44 @@ export function isDate(value) {
   );
 }
 
+export function summarizeForecastCoverage(startDate, endDate, availableDates) {
+  const dayMs = 86_400_000;
+  const start = Date.parse(`${startDate}T00:00:00Z`);
+  const end = Date.parse(`${endDate}T00:00:00Z`);
+  const dates = [
+    ...new Set(
+      availableDates.filter(
+        (date) => isDate(date) && date >= startDate && date <= endDate,
+      ),
+    ),
+  ].sort();
+  const tripDays = Math.round((end - start) / dayMs) + 1;
+  const missing = [];
+  let cursor = start;
+  const dateString = (time) => new Date(time).toISOString().slice(0, 10);
+  for (const date of dates) {
+    const time = Date.parse(`${date}T00:00:00Z`);
+    if (time > cursor)
+      missing.push({
+        start: dateString(cursor),
+        end: dateString(time - dayMs),
+      });
+    cursor = time + dayMs;
+  }
+  if (cursor <= end) missing.push({ start: dateString(cursor), end: endDate });
+  return {
+    tripDays,
+    forecastDaysMatched: dates.length,
+    forecastCoverage:
+      dates.length === tripDays
+        ? 'complete'
+        : dates.length
+          ? 'partial'
+          : 'unavailable',
+    forecastMissingDateRanges: missing,
+  };
+}
+
 export function clampNumber(value, min, max, fallback) {
   if (
     value === null ||

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { fetchOpenMeteoHazards, geocodeScore } from '../server/weather.js';
+import { fetchOpenMeteoHazards } from '../server/weather.js';
+import { geocodeScore } from '../server/locations.js';
 
 test('geocoding honours the explicitly requested state', () => {
   const query = 'rampur';
@@ -22,8 +23,10 @@ test('geocoding honours the explicitly requested state', () => {
 });
 
 test('weather collection never substitutes dates outside the trip', async (t) => {
+  const requested = [];
   const mock = t.mock.method(globalThis, 'fetch', async (input) => {
     const url = new URL(input);
+    requested.push(url);
     if (url.hostname.startsWith('geocoding-api'))
       return Response.json({
         results: [
@@ -74,4 +77,38 @@ test('weather collection never substitutes dates outside the trip', async (t) =>
   assert.equal(matching.meta.hasDateRelevantData, true);
   assert.equal(matching.issues.length, 0);
   assert.equal(matching.meta.floodStatus, 'no_data_for_trip');
+
+  const geocodingRequests = requested.filter((url) =>
+    url.hostname.startsWith('geocoding-api'),
+  ).length;
+  const partial = await fetchOpenMeteoHazards(
+    'Rampur',
+    '2026-10-22',
+    '2026-10-25',
+    {
+      name: 'Rampur',
+      admin1: 'Himachal Pradesh',
+      country: 'India',
+      latitude: 31.4,
+      longitude: 77.6,
+    },
+  );
+  assert.equal(partial.meta.tripDays, 4);
+  assert.equal(partial.meta.forecastCoverage, 'partial');
+  assert.equal(partial.meta.forecastDaysMatched, 2);
+  assert.deepEqual(partial.meta.forecastMissingDateRanges, [
+    { start: '2026-10-24', end: '2026-10-25' },
+  ]);
+  assert.equal(partial.meta.location.admin1, 'Himachal Pradesh');
+  assert.equal(
+    requested.filter((url) => url.hostname.startsWith('geocoding-api')).length,
+    geocodingRequests,
+  );
+  assert.ok(
+    requested.some(
+      (url) =>
+        url.hostname === 'api.open-meteo.com' &&
+        url.searchParams.get('latitude') === '31.4',
+    ),
+  );
 });

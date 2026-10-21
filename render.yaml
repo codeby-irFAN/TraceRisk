@@ -12,5 +12,7 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
+      - key: TRUST_PROXY_HOPS
+        value: '1'
       - key: NODE_OPTIONS
         value: '--dns-result-order=ipv4first'

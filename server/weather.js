@@ -1,129 +1,18 @@
 import {
-  OPEN_METEO_GEOCODING,
   OPEN_METEO_FORECAST,
   OPEN_METEO_FLOOD,
-  OPEN_METEO_PROXY_URL,
   OPEN_METEO_TIMEOUT_MS,
-  OPEN_METEO_CACHE_TTL_MS,
-  OPEN_METEO_MIN_GAP_MS,
-  GEOCODING_TIMEOUT_MS,
 } from './config.js';
-import { fetchJson, sleep } from './http.js';
-import { cleanText, trimCache } from './utils.js';
+import { openMeteoJson } from './open-meteo.js';
+import { findDestinationLocations } from './locations.js';
+import { cleanText, summarizeForecastCoverage } from './utils.js';
 
-const openMeteoResponseCache = new Map();
-let openMeteoQueue = Promise.resolve();
-function getOpenMeteoRequestUrl(url) {
-  if (!OPEN_METEO_PROXY_URL) return String(url);
-
-  const original = new URL(String(url));
-  const routeByEndpoint = {
-    'geocoding-api.open-meteo.com/v1/search': '/geocoding/search',
-    'api.open-meteo.com/v1/forecast': '/forecast',
-    'flood-api.open-meteo.com/v1/flood': '/flood',
-  };
-  const route = routeByEndpoint[`${original.hostname}${original.pathname}`];
-  if (!route) throw new Error('Unsupported Open-Meteo endpoint');
-
-  const proxied = new URL(route, `${OPEN_METEO_PROXY_URL}/`);
-  original.searchParams.forEach((value, key) => {
-    proxied.searchParams.set(key, value);
-  });
-  return proxied.toString();
-}
-
-async function openMeteoJson(
-  url,
-  options = {},
-  timeoutMs = OPEN_METEO_TIMEOUT_MS,
+export async function fetchOpenMeteoHazards(
+  destination,
+  startDate,
+  endDate,
+  confirmedLocation,
 ) {
-  const cacheKey = String(url);
-
-  function readCache() {
-    const cached = openMeteoResponseCache.get(cacheKey);
-
-    if (!cached) return undefined;
-
-    if (Date.now() - cached.createdAt >= OPEN_METEO_CACHE_TTL_MS) {
-      openMeteoResponseCache.delete(cacheKey);
-      return undefined;
-    }
-
-    return cached.data;
-  }
-
-  const cached = readCache();
-  if (cached !== undefined) return cached;
-
-  const run = async () => {
-    const queuedCached = readCache();
-    if (queuedCached !== undefined) return queuedCached;
-
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      try {
-        const requestUrl = getOpenMeteoRequestUrl(url);
-        const requestOptions = { ...options, retryRateLimit: false };
-
-        if (OPEN_METEO_PROXY_URL) {
-          const token = process.env.OPEN_METEO_PROXY_TOKEN;
-          if (!token) {
-            throw new Error(
-              'OPEN_METEO_PROXY_TOKEN is required when OPEN_METEO_PROXY_URL is configured',
-            );
-          }
-          requestOptions.headers = {
-            ...(options.headers || {}),
-            Authorization: `Bearer ${token}`,
-          };
-        }
-
-        const data = await fetchJson(requestUrl, requestOptions, timeoutMs);
-
-        openMeteoResponseCache.set(cacheKey, {
-          createdAt: Date.now(),
-          data,
-        });
-
-        trimCache(openMeteoResponseCache, 100);
-
-        return data;
-      } catch (error) {
-        if (Number(error?.status) !== 429 || attempt === 2) {
-          console.error('[TraceRisk] Open-Meteo request failed:', {
-            url: cacheKey,
-            status: error?.status,
-            message: error?.message,
-          });
-
-          throw error;
-        }
-
-        const backoff = 1_500 * 2 ** attempt;
-        const retryAfter = Number(error?.retryAfterMs) || 0;
-        const waitMs = Math.max(backoff, retryAfter);
-
-        console.warn(
-          `[TraceRisk] Open-Meteo HTTP 429; retrying in ${waitMs}ms`,
-        );
-
-        await sleep(waitMs);
-      }
-    }
-
-    throw new Error('Open-Meteo retry attempts exhausted');
-  };
-
-  const request = openMeteoQueue.then(run, run);
-
-  openMeteoQueue = request.then(
-    () => new Promise((resolve) => setTimeout(resolve, OPEN_METEO_MIN_GAP_MS)),
-    () => new Promise((resolve) => setTimeout(resolve, OPEN_METEO_MIN_GAP_MS)),
-  );
-
-  return request;
-}
-
-export async function fetchOpenMeteoHazards(destination, startDate, endDate) {
   const meta = {
     provider: 'Open-Meteo',
     apiKeyRequired: false,
@@ -132,7 +21,7 @@ export async function fetchOpenMeteoHazards(destination, startDate, endDate) {
     forecastStatus: 'unavailable',
     floodStatus: 'unavailable',
     forecastWindow: null,
-    forecastDaysMatched: 0,
+    ...summarizeForecastCoverage(startDate, endDate, []),
     floodDaysMatched: 0,
     dailyForecast: [],
     riverFlow: [],
@@ -142,12 +31,16 @@ export async function fetchOpenMeteoHazards(destination, startDate, endDate) {
     note: 'Open-Meteo forecast/flood outputs are model signals, not official meteorological warnings.',
   };
 
-  const place = await geocodeDestination(destination).catch((error) => {
-    meta.warnings.push(
-      `Geocoding failed: ${cleanText(error?.message || 'unknown error', 180)}`,
-    );
-    return null;
-  });
+  const place =
+    confirmedLocation ||
+    (await findDestinationLocations(destination)
+      .then((places) => places[0])
+      .catch((error) => {
+        meta.warnings.push(
+          `Geocoding failed: ${cleanText(error?.message || 'unknown error', 180)}`,
+        );
+        return null;
+      }));
 
   if (!place) {
     meta.warnings.push(
@@ -233,7 +126,19 @@ export async function fetchOpenMeteoHazards(destination, startDate, endDate) {
     meta.forecastWindow = times.length
       ? { start: times[0], end: times[times.length - 1] }
       : null;
-    meta.forecastDaysMatched = matchingDays.length;
+    Object.assign(
+      meta,
+      summarizeForecastCoverage(
+        startDate,
+        endDate,
+        matchingDays.map((day) => day.date),
+      ),
+    );
+    if (meta.forecastCoverage === 'partial') {
+      meta.warnings.push(
+        `Daily forecasts cover only ${meta.forecastDaysMatched} of ${meta.tripDays} trip days. Conditions on the remaining dates are unknown.`,
+      );
+    }
 
     if (matchingDays.length) {
       meta.forecastStatus = 'available';
@@ -394,93 +299,6 @@ export async function fetchOpenMeteoHazards(destination, startDate, endDate) {
   );
 
   return { sources, issues, meta };
-}
-
-async function geocodeDestination(destination) {
-  const variants = [
-    ...new Set(
-      [destination.trim(), destination.split(',')[0].trim()].filter(Boolean),
-    ),
-  ];
-  let lastError = null;
-
-  for (const name of variants) {
-    const url = new URL(OPEN_METEO_GEOCODING);
-    url.searchParams.set('name', name);
-    url.searchParams.set('count', '10');
-    url.searchParams.set('language', 'en');
-    url.searchParams.set('format', 'json');
-    url.searchParams.set('countryCode', 'IN');
-
-    try {
-      const data = await openMeteoJson(
-        url,
-        {
-          headers: { 'User-Agent': 'TraceRisk-App/3.2.0' },
-        },
-        GEOCODING_TIMEOUT_MS,
-      );
-      const results = Array.isArray(data?.results) ? data.results : [];
-      if (!results.length) continue;
-
-      const normalizedQuery = normalizePlaceName(name);
-      const region = normalizePlaceName(
-        destination.split(',').slice(1).join(' '),
-      );
-      results.sort(
-        (a, b) =>
-          geocodeScore(b, normalizedQuery, region) -
-          geocodeScore(a, normalizedQuery, region),
-      );
-      const chosen = results.find(
-        (item) => String(item.country_code || '').toUpperCase() === 'IN',
-      );
-      if (
-        chosen &&
-        Number.isFinite(Number(chosen.latitude)) &&
-        Number.isFinite(Number(chosen.longitude))
-      ) {
-        return chosen;
-      }
-    } catch (error) {
-      lastError = error;
-    }
-  }
-
-  if (lastError) throw lastError;
-  return null;
-}
-
-export function geocodeScore(result, normalizedQuery, region = '') {
-  let score = 0;
-  const name = normalizePlaceName(result?.name || '');
-  const admin1 = normalizePlaceName(result?.admin1 || '');
-  const admin2 = normalizePlaceName(result?.admin2 || '');
-  const country = String(result?.country_code || '').toUpperCase();
-
-  if (country === 'IN') score += 100;
-  if (region && (admin1 === region || admin2 === region)) score += 120;
-  if (name === normalizedQuery) score += 100;
-  if (admin1 === normalizedQuery || admin2 === normalizedQuery) score += 80;
-  if (
-    name &&
-    normalizedQuery &&
-    (name.includes(normalizedQuery) || normalizedQuery.includes(name))
-  )
-    score += 25;
-  if (/^(ADM1|ADM2|ADM3|PPLA|PPLA2|PPLC)$/i.test(result?.feature_code || ''))
-    score += 10;
-  if (Number(result?.population) > 100_000) score += 5;
-  return score;
-}
-
-function normalizePlaceName(value) {
-  return String(value || '')
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
 }
 
 function valueAt(array, index) {

@@ -30,6 +30,8 @@ import {
 import DateField from './components/DateField.jsx';
 import IssueCard from './components/IssueCard.jsx';
 import WeatherPanel from './components/WeatherPanel.jsx';
+import LocationChoices from './components/LocationChoices.jsx';
+import SourceBadges from './components/SourceBadges.jsx';
 import {
   localDate,
   plusDays,
@@ -37,6 +39,7 @@ import {
   formatDuration,
   severityClass,
   friendlyModelName,
+  requestError,
 } from './utils.js';
 
 const loadingSteps = [
@@ -71,6 +74,10 @@ export default function App() {
   const [error, setError] = useState('');
   const [loadingStep, setLoadingStep] = useState(0);
   const [service, setService] = useState(null);
+  const [locations, setLocations] = useState([]);
+  const [selectedLocation, setSelectedLocation] = useState(null);
+  const [notice, setNotice] = useState('');
+  const [phase, setPhase] = useState('scan');
   const appRef = useRef(null);
   const scanRef = useRef(null);
   const resultSources = useMemo(
@@ -152,12 +159,41 @@ export default function App() {
     if (scanRef.current) return;
     const controller = new AbortController();
     scanRef.current = controller;
-    const timeout = window.setTimeout(() => controller.abort(), 108_000);
+    const timeout = window.setTimeout(
+      () =>
+        controller.abort(new DOMException('Request timed out', 'TimeoutError')),
+      108_000,
+    );
     setError('');
+    setNotice('');
     setResult(null);
     setLoading(true);
     setLoadingStep(0);
     try {
+      if (!selectedLocation) {
+        setPhase('location');
+        const response = await fetch(
+          `/api/locations?destination=${encodeURIComponent(destination.trim())}`,
+          { signal: controller.signal },
+        );
+        const payload = await response.json();
+        if (!response.ok)
+          throw new Error(
+            requestError(
+              response,
+              payload,
+              'Could not find your destination. Please try again.',
+            ),
+          );
+        if (!Array.isArray(payload.locations) || !payload.locations.length)
+          throw new Error(
+            'No matching destination in India was found. Try adding the district or state.',
+          );
+        setLocations(payload.locations);
+        setNotice('Confirm the city and state below, then start your scan.');
+        return;
+      }
+      setPhase('scan');
       const response = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -165,15 +201,24 @@ export default function App() {
           destination: destination.trim(),
           startDate,
           endDate,
+          locationId: selectedLocation.id,
         }),
         signal: controller.signal,
       });
       const payload = await response.json().catch(() => null);
-      if (!response.ok)
+      if (!response.ok) {
+        if (payload?.code === 'LOCATION_REQUIRED') {
+          setLocations([]);
+          setSelectedLocation(null);
+        }
         throw new Error(
-          payload?.error ||
+          requestError(
+            response,
+            payload,
             `Scan failed (${response.status}). Please try again.`,
+          ),
         );
+      }
       if (
         !payload ||
         !Array.isArray(payload.issues) ||
@@ -186,12 +231,19 @@ export default function App() {
       }
       setResult(payload);
     } catch (scanError) {
-      setError(
-        scanError.name === 'AbortError'
-          ? 'The scan took too long. Please try again; a timeout is not evidence that the destination is safe.'
-          : scanError.message ||
-              'Could not complete the scan. Check your connection and try again.',
-      );
+      if (
+        controller.signal.aborted &&
+        controller.signal.reason?.message === 'Cancelled by traveller'
+      ) {
+        setNotice('Scan cancelled. You can change your trip and try again.');
+      } else {
+        setError(
+          controller.signal.aborted
+            ? 'The request took too long. Please try again; a timeout is not evidence that the destination is safe.'
+            : scanError.message ||
+                'Could not complete the scan. Check your connection and try again.',
+        );
+      }
     } finally {
       window.clearTimeout(timeout);
       scanRef.current = null;
@@ -239,7 +291,7 @@ export default function App() {
         </div>
       </header>
 
-      <main id="top">
+      <main>
         <section className="hero-layout">
           <div className="hero-copy">
             <div className="eyebrow">
@@ -296,7 +348,12 @@ export default function App() {
                   maxLength={90}
                   placeholder="e.g. Imphal, Manipur"
                   value={destination}
-                  onChange={(event) => setDestination(event.target.value)}
+                  onChange={(event) => {
+                    setDestination(event.target.value);
+                    setSelectedLocation(null);
+                    setLocations([]);
+                    setNotice('');
+                  }}
                   required
                 />
                 <datalist id="indian-destinations">
@@ -324,6 +381,15 @@ export default function App() {
                   ))}
                 </datalist>
               </div>
+              <LocationChoices
+                locations={locations}
+                selected={selectedLocation}
+                onSelect={(place) => {
+                  setSelectedLocation(place);
+                  setNotice('');
+                }}
+                disabled={loading}
+              />
               <div className="date-label-row">
                 <span>WHEN ARE YOU TRAVELLING?</span>
               </div>
@@ -354,6 +420,7 @@ export default function App() {
                 type="submit"
                 disabled={
                   loading ||
+                  (locations.length > 0 && !selectedLocation) ||
                   !destination.trim() ||
                   !startDate ||
                   !endDate ||
@@ -366,7 +433,8 @@ export default function App() {
                   </>
                 ) : (
                   <>
-                    Check my destination <ArrowUpRight size={17} />{' '}
+                    {selectedLocation ? 'Check my trip' : 'Find destination'}{' '}
+                    <ArrowUpRight size={17} />{' '}
                   </>
                 )}
               </button>
@@ -419,7 +487,11 @@ export default function App() {
               <div className="panel-kicker">
                 ANALYSING {destination.toUpperCase()}
               </div>
-              <h3>{loadingSteps[loadingStep]}</h3>
+              <h3>
+                {phase === 'location'
+                  ? 'Finding your destination'
+                  : loadingSteps[loadingStep]}
+              </h3>
               <p>
                 Combining targeted search lanes, source extraction and forecast
                 data for {prettyDate(startDate)} – {prettyDate(endDate)}.
@@ -429,9 +501,27 @@ export default function App() {
               </div>
             </div>
             <div className="loading-timer">
-              <span className="loading-indicator" /> LIVE SCAN
+              <span className="loading-indicator" />{' '}
+              {phase === 'location' ? 'LOCATION LOOKUP' : 'LIVE SCAN'}
             </div>
+            <button
+              type="button"
+              className="secondary-button cancel-scan"
+              onClick={() =>
+                scanRef.current?.abort(
+                  new DOMException('Cancelled by traveller', 'AbortError'),
+                )
+              }
+            >
+              Cancel scan
+            </button>
           </section>
+        )}
+
+        {notice && !loading && (
+          <p className="scan-notice" role="status">
+            {notice}
+          </p>
         )}
 
         {error && !loading && (
@@ -636,6 +726,7 @@ export default function App() {
                   <IssueCard
                     key={issue.id}
                     issue={issue}
+                    checkedAt={result.checkedAt}
                     sources={issue.sourceIds
                       .map((id) => resultSources.get(id))
                       .filter(Boolean)}
@@ -736,12 +827,12 @@ export default function App() {
                           {source.title || source.domain || source.id}
                         </strong>
                         <span>
-                          {source.domain} ·{' '}
-                          {source.publishedAt
-                            ? `date: ${source.publishedAt}`
-                            : 'date not provided'}{' '}
-                          · {source.group || 'web'}
+                          {source.domain} · {source.group || 'web'}
                         </span>
+                        <SourceBadges
+                          source={source}
+                          checkedAt={result.checkedAt}
+                        />
                         {source.preview && (
                           <p className="source-list-preview">
                             {source.preview}
