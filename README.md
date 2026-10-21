@@ -89,6 +89,16 @@ Open [http://127.0.0.1:5173](http://127.0.0.1:5173) in your browser. Enter an In
 
 While the app is running, open [http://127.0.0.1:8787/api/health](http://127.0.0.1:8787/api/health). The endpoint reports which providers are configured and the active model names; it does not return the API key values.
 
+## Planning workspace
+
+The interface uses an ivory, forest-green, and terracotta theme with a persistent dark mode. Use the daylight/evening button in the header to switch; the default follows the device preference.
+
+- Destination suggestions and **A 3-day escape**, **This weekend**, and **Next week** shortcuts fill trip details without starting a request.
+- **Save plan** keeps up to six destination/date combinations in the current browser. Reopening a plan requires fresh location confirmation; it never restores an old safety assessment or server location ID. Past trips move to today while keeping their duration. Remove individual plans from **My notebook**.
+- The personal checklist is stored in this browser and resets when the place or dates change. It has no effect on the risk assessment. If browser storage is unavailable, plans and reminders work for the current visit.
+- After a scan, filter signals by category, sort by score or confidence, and search reviewed sources by title, website, or source type. Coverage warnings remain visible when filtering.
+- **Download briefing** saves the complete findings, source links, forecast gaps, and limitations as a plain-text file. **Print briefing** prints the current filtered view and identifies that limitation on the printout.
+
 ## Provider behavior
 
 1. **Gemini** is the primary AI review provider when `GEMINI_API_KEY` is configured.
