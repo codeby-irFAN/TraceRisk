@@ -1,177 +1,121 @@
-# TraceRisk — Domestic India Travel Check
+# TraceRisk
 
-TraceRisk is a source-led travel-awareness dashboard for checking a destination in India before a trip. It combines targeted web searches, webpage extraction, weather and river-flow forecasts, and an AI-assisted evidence summary to help travellers review potential issues for their selected dates.
+**The travel field guide for India.**
 
-> **Important:** TraceRisk is a prototype for travel awareness, not an official government safety rating, emergency service, or guarantee of safety. Verify important information with official authorities and local sources before travelling.
-Demo Video : https://drive.google.com/file/d/1RIJOVODbjnc7rzDPaioiRQqtznZLq5oE/view?usp=drivesdk
+[![CI](https://github.com/codeby-irFAN/TraceRisk/actions/workflows/ci.yml/badge.svg)](https://github.com/codeby-irFAN/TraceRisk/actions/workflows/ci.yml)
 
-## Features
+TraceRisk turns local reports, official advisories, and forecast data into a source-linked briefing for an Indian destination and travel dates. Confirm the right city and state, review what may affect your journey, and keep a copy of the evidence and its limitations.
 
-- **Eight risk-focused search lanes:** traffic and roads, public transport, civil unrest, official advisories, health, crime, infrastructure, and regional news.
-- **Broader search retry:** a lane with no usable targeted results can retry with a broader query, improving recall when narrow filters miss relevant pages.
-- **Webpage extraction:** selects a diverse group of source URLs and fetches them in two batches, up to 20 candidate source pages overall.
-- **AI-assisted evidence review:** Google Gemini is the primary provider; Groq is the optional fallback. The result reports which provider/model was used.
-- **Weather and flood context:** Open-Meteo geocoding, forecast, and river-discharge data are shown independently of whether the AI identifies a travel issue.
-- **Confirmed destinations:** choose the resolved city, district, and state before starting a scan; search and weather use the same selection.
-- **Cancellable scans:** stop waiting at any point; shared scans continue for other travellers who still need them.
-- **Source-linked findings:** issue cards link back to sources and label government domains, publication dates, older reports, and snippet-only evidence.
-- **Explicit weather coverage:** see how many trip days have forecasts and exactly which dates are missing.
-- **Honest coverage states:** limited or inconclusive collection is not represented as proof that a destination is safe.
-- **Responsive interface:** React, Vite, Lucide icons, and GSAP animation with reduced-motion support.
-- **Bounded runtime:** the backend applies stage timeouts and an overall scan budget of about 100 seconds.
+> TraceRisk is a prototype for travel awareness, not an official safety rating, emergency service, or guarantee of safety. Confirm important conditions with official authorities and transport operators.
 
-## Tech stack
+[Demo recording](https://drive.google.com/file/d/1RIJOVODbjnc7rzDPaioiRQqtznZLq5oE/view?usp=drivesdk) · [Engineering decisions](DECISIONS.md) · [API](docs/API.md) · [Deployment](docs/DEPLOYMENT.md) · [Contributing](CONTRIBUTING.md) · [Azinhack brief](AZINHACK_SUBMISSION.md)
 
-- **Frontend:** React 19, Vite 7, GSAP, Lucide React
-- **Backend:** Node.js 20.19+ or 22.12+, Express 5
-- **Search and page extraction:** TinyFish Search and Fetch APIs
-- **AI review:** Google Gemini (primary), Groq (fallback)
-- **Weather/flood context:** Open-Meteo public geocoding, forecast, and flood APIs
+Use this README for the current workflow; the recording is a separate demonstration.
 
-## Quick start (Windows / VS Code)
+## What you can do
 
-### 1. Install prerequisites
+- **Plan a trip:** choose destination suggestions or enter a place, use date shortcuts, and explicitly confirm the resolved city, district, and state.
+- **Keep a notebook:** save up to six trip plans in the current browser, reopen or remove them, and use a personal preparation checklist. Saved plans contain trip details, not previous safety assessments.
+- **Review eight search categories:** traffic and roads, public transport, civil unrest, official advisories, health, crime, infrastructure, and regional news.
+- **Inspect the evidence:** open source links, distinguish full pages from snippets, see government-domain and publication-date badges, and search or filter the source list.
+- **Understand the weather window:** see daily forecasts and modelled river flow, the number of trip days covered, and the exact dates without daily forecasts.
+- **Explore findings:** filter signals by category and sort them by score or confidence while keeping coverage warnings visible.
+- **Keep your briefing:** download the complete findings and source links as text, or print the current filtered view with its limitations.
+- **Control the experience:** cancel a lookup or scan, switch between daylight and evening themes, and use the responsive interface with keyboard navigation and reduced-motion support.
 
-Install **Node.js 20.19+ or 22.12+** and npm. Confirm they are available in the VS Code terminal:
+The visual theme uses flat ivory, forest green, and terracotta surfaces. The frontend uses React 19, Vite 7, Lucide icons, and CSS transitions; the backend uses Express 5 on Node.js.
 
-```powershell
-node -v
-npm -v
-```
+<details>
+<summary>View the current interface</summary>
 
-### 2. Install dependencies
+Interface previews, not evidence of a successful live provider scan. Connection indicators are illustrative.
 
-Open the project folder in VS Code, open **Terminal → New Terminal**, and run:
+### Daylight
 
-```powershell
+![TraceRisk trip planner with an ivory canvas, destination and date fields, saved-plan notebook, and checklist](graphics/screenshots/desktop-light.png)
+
+### Evening
+
+![TraceRisk trip planner in its dark forest-green theme](graphics/screenshots/desktop-dark.png)
+
+### Mobile
+
+<img src="graphics/screenshots/mobile-light.png" alt="TraceRisk mobile layout with trip planner, notebook, and preparation checklist" width="320" />
+
+</details>
+
+## Run locally
+
+Use **Node.js 24** for the same major version as CI. The package supports Node.js **20.19+ in the 20.x line, or 22.12+**. Run these commands from the repository root:
+
+```sh
+git clone https://github.com/codeby-irFAN/TraceRisk.git
+cd TraceRisk
 npm ci
 ```
 
-### 3. Configure API keys
+Copy the configuration template once, preserving any existing `.env`:
 
-Create a local `.env` file from the example:
-
-```powershell
-Copy-Item .env.example .env
+```sh
+# macOS / Linux
+cp -n .env.example .env
 ```
 
-Open `.env` and add your own keys. The keys below are placeholders—replace them with valid credentials.
-
-```dotenv
-TINYFISH_API_KEY=your_tinyfish_api_key
-GEMINI_API_KEY=your_gemini_api_key
-GEMINI_MODEL=gemini-3.8-flash
-GROQ_API_KEY=your_groq_api_key
-GROQ_MODEL=openai/gpt-oss-20b
-GROQ_FALLBACK_MODEL=
-PORT=8787
+```powershell
+# Windows PowerShell
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
 ```
 
-Get credentials from the provider dashboards:
+Edit `.env` before starting:
 
-- [TinyFish](https://agent.tinyfish.ai/) — live web search and webpage extraction.
-- [Google AI Studio](https://aistudio.google.com/apikey) — Gemini API key.
-- [Groq Console](https://console.groq.com/keys) — optional AI fallback key.
+| Setting                                             | Needed for                                                                       |
+| --------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `TINYFISH_API_KEY`                                  | Required to start a destination scan: live search and webpage extraction.        |
+| `GEMINI_API_KEY`                                    | Optional primary AI review.                                                      |
+| `GROQ_API_KEY`                                      | Optional fallback AI review; can also run without Gemini.                        |
+| `GEMINI_MODEL`, `GROQ_MODEL`, `GROQ_FALLBACK_MODEL` | Optional model overrides; see [configuration](docs/DEPLOYMENT.md#configuration). |
 
-`TINYFISH_API_KEY` is required for a scan. `GEMINI_API_KEY` enables the primary AI assessment. `GROQ_API_KEY` is recommended so the backend can attempt a second provider if Gemini is unavailable. With neither AI key configured, the backend can use its rules-based review; a TinyFish key is still required to start a destination scan. Open-Meteo does not require an API key for the public non-commercial endpoints used here.
+Replace required placeholders with valid credentials. Leave unused optional credentials blank; a nonempty placeholder is reported as configured even though it cannot authenticate. Get keys through [TinyFish](https://agent.tinyfish.ai/), [Google AI Studio](https://aistudio.google.com/apikey), or [Groq Console](https://console.groq.com/keys). Keep real credentials in local or deployment settings, never in Git.
 
-**Never commit `.env` or paste API keys into source code, screenshots, public issues, or commits.** `.gitignore` excludes `.env` and other `.env.*` files while allowing `.env.example` to be committed.
+Open-Meteo geocoding is needed to confirm a destination. Its public non-commercial geocoding, forecast, and flood endpoints do not require an API key. The optional external proxy is described in the [deployment guide](docs/DEPLOYMENT.md#optional-cloudflare-worker-proxy).
 
-### 4. Start the app
-
-```powershell
+```sh
 npm run dev
 ```
 
-Open [http://127.0.0.1:5173](http://127.0.0.1:5173) in your browser. Enter an Indian destination and travel dates, select **Find destination**, choose the city and state, then select **Check my trip**. Use **Cancel scan** to stop a lookup or scan. Stop the services with `Ctrl+C` in the terminal.
+The frontend starts at `http://127.0.0.1:5173`; Express defaults to port `8787`. Vite forwards `/api` requests to the backend and follows a custom `PORT` setting. Backend watch mode and Vite reload development changes. Stop both with `Ctrl+C`.
 
-### 5. Check backend status
+1. Enter a destination and travel dates; shortcuts fill the form without starting a request.
+2. Select **Find destination**, then choose the correct location.
+3. Select **Check my trip**. A scan can take up to 100 seconds; **Cancel scan** stops waiting.
+4. Read the source-coverage warning, findings, weather gaps, and supporting links.
+5. Download the complete briefing or print the current view. Recheck official information close to departure.
 
-While the app is running, open [http://127.0.0.1:8787/api/health](http://127.0.0.1:8787/api/health). The endpoint reports which providers are configured and the active model names; it does not return the API key values.
+`GET /api/health` reports server configuration without returning keys. Configuration flags do not validate credentials, quota, model availability, or upstream connectivity.
 
-## Planning workspace
-
-The interface uses an ivory, forest-green, and terracotta theme with a persistent dark mode. Use the daylight/evening button in the header to switch; the default follows the device preference.
-
-- Destination suggestions and **A 3-day escape**, **This weekend**, and **Next week** shortcuts fill trip details without starting a request.
-- **Save plan** keeps up to six destination/date combinations in the current browser. Reopening a plan requires fresh location confirmation; it never restores an old safety assessment or server location ID. Past trips move to today while keeping their duration. Remove individual plans from **My notebook**.
-- The personal checklist is stored in this browser and resets when the place or dates change. It has no effect on the risk assessment. If browser storage is unavailable, plans and reminders work for the current visit.
-- After a scan, filter signals by category, sort by score or confidence, and search reviewed sources by title, website, or source type. Coverage warnings remain visible when filtering.
-- **Download briefing** saves the complete findings, source links, forecast gaps, and limitations as a plain-text file. **Print briefing** prints the current filtered view and identifies that limitation on the printout.
-
-## Provider behavior
-
-1. **Gemini** is the primary AI review provider when `GEMINI_API_KEY` is configured.
-2. **Groq** is attempted if Gemini is unavailable and `GROQ_API_KEY` is configured. Groq can also operate by itself if no Gemini key is configured.
-3. A second Groq model can optionally be configured through `GROQ_FALLBACK_MODEL`.
-4. If configured AI providers fail, TraceRisk uses a deterministic rules-based review and labels it accordingly rather than claiming an AI result.
-
-Gemini retries transient server/network/timeout failures once. HTTP 429/quota errors are not repeatedly retried against Gemini; the backend can move to Groq when configured. Provider quotas, model availability, pricing, and default model access may change.
-
-## How the risk score works
-
-TraceRisk scores are **screening/triage indicators, not probabilities of harm** and not government classifications. Each issue receives a score from the AI review or deterministic fallback rules. The overall score is then computed from the issue scores:
+## How collection and assessment work
 
 ```text
-overall score = min(100, highest issue score + 4 × (number of issues − 1))
+Trip planner
+  ├── GET /api/locations → user confirms a server-resolved place
+  └── POST /api/analyze → request limits, shared work, and short-lived cache
+       ├── 8 TinyFish search lanes + broader retry where appropriate
+       ├── Open-Meteo forecasts for the confirmed coordinates
+       ├── Deduplicate and select up to 20 webpage candidates
+       ├── Fetch pages in batches of up to 10 URLs
+       ├── Gemini → optional Groq → labelled rules-based fallback
+       └── Cited signals + source coverage + daily forecast gaps
 ```
 
-If there are no issues, the current implementation returns `0`. The overall label is `Low signal` below 35, `Elevated` from 35–59, `High` from 60–79, and `Critical` at 80 or above. Since the AI-generated issue scores are not statistically calibrated, this overall number should not be interpreted as a measured probability or a precise forecast of personal risk. The formula and thresholds are documented in [`DECISIONS.md`](DECISIONS.md).
+Gemini is primary when configured; Groq is optional, and rules-based assessment remains available without either AI key. Weather thresholds supplement the assessment. Default model identifiers are implementation settings, not a guarantee that a provider currently offers them to every account.
 
-Weather thresholds are model-based screening signals, **not official IMD warnings**. Weather data availability also depends on the destination being resolved by geocoding and on the forecast provider's coverage.
+Collection status is `adequate`, `limited`, or `inconclusive`. These describe evidence coverage, not destination safety. A score of zero or an empty issue list is not an all-clear. The heuristic overall score and its limitations are explained in [DECISIONS.md](DECISIONS.md#risk-scoring).
 
-## Architecture
+By default, scan protection allows six requests per client IP per ten minutes and three distinct concurrent scans per Node process. Identical requests can share provider work, and completed results are cached for 45 seconds. These controls, including proxy/IP assumptions and multi-instance limitations, are detailed in [deployment](docs/DEPLOYMENT.md#request-limits-and-process-state).
 
-```text
-React + Vite dashboard
-  ├── GET /api/locations → traveller confirms a city/state
-  └── POST /api/analyze (confirmed location ID + trip dates)
-       ├── 8 concurrent TinyFish Search lanes
-       ├── broader retry for empty targeted lanes
-       ├── Open-Meteo geocoding + forecast + river-discharge context
-       ├── source deduplication and category-balanced selection
-       ├── TinyFish Fetch (up to 2 batches of 10 URLs)
-       ├── Gemini AI evidence review
-       ├── Groq fallback if configured
-       ├── deterministic rules/weather signal merge
-       └── issues + sources + weather + coverage metadata
-```
+## Development and checks
 
-
-## Scan limits and shared requests
-
-By default, each client IP can make **6 scan requests per 10 minutes**, with at most **3 distinct scans running at once**. Location lookups are limited to 20 requests per IP per minute and 4 concurrent distinct lookups. Busy or rate-limited responses use HTTP 429 with a `Retry-After` header; the interface shows the wait time.
-
-Identical in-flight scans for the same confirmed place and dates share provider work. Completed scans are cached for 45 seconds. Cancelling one request removes that traveller from the shared scan; upstream requests are aborted when nobody is waiting. Cache hits and shared requests still count toward each client's request limit. A scan has at most 100 waiting subscribers.
-
-The scan limits can be adjusted in `.env`:
-
-| Variable | Default | Accepted range |
-| --- | --- | --- |
-| `MAX_CONCURRENT_SCANS` | `3` | 1–20 |
-| `SCAN_RATE_LIMIT` | `6` | 1–100 requests per window |
-| `SCAN_RATE_WINDOW_MS` | `600000` | 1–86400000 milliseconds |
-| `TRUST_PROXY_HOPS` | `0` | 0–10; 0 uses the direct peer address |
-
-Only set `TRUST_PROXY_HOPS` when the deployment has a known, fixed number of trusted reverse proxies. The Render blueprint sets it to `1` for Render's ingress proxy; local servers keep `0`. Do not expose that proxy-configured backend through a shorter, untrusted network path, since forwarded IPs would become spoofable.
-
-Limits, shared work, cached results, and location confirmations are **per Node process**, reset at restart, and are not coordinated between replicas. Use a shared store or gateway rate limits before scaling to multiple instances. These limits reduce burst usage; provider billing quotas remain separate.
-
-## API location confirmation
-
-1. Request `GET /api/locations?destination=Rampur` and display its `locations` choices.
-2. Let the traveller select the correct place. Each choice contains an opaque `id`, a display `label`, and geographic metadata.
-3. Send `POST /api/analyze` with `destination` (the same lookup query), `locationId`, `startDate`, and `endDate`. Dates use `YYYY-MM-DD`.
-
-Unconfirmed, invented, expired, or mismatched location IDs return HTTP 400 with `LOCATION_REQUIRED`. Confirmations last up to 10 minutes and may need refreshing after a server restart. Coordinates supplied directly by a client are ignored; the server uses the confirmed provider result for both weather and location-specific searches.
-
-Daily weather metadata includes `tripDays`, `forecastDaysMatched`, `forecastCoverage` (`complete`, `partial`, or `unavailable`), and `forecastMissingDateRanges`. The missing ranges refer to daily forecasts, independently of river-discharge availability. A government-domain badge identifies the website type, not whether an advisory is current; reports older than 30 days are flagged for verification.
-
-## Validation
-
-Before opening a pull request, run:
-
-```powershell
+```sh
 npm test
 npm run format:check
 npm run build
@@ -179,30 +123,28 @@ npx playwright install chromium
 npm run test:browser
 ```
 
-GitHub Actions runs installation, the Node regression suite, formatting, the production build, and Chromium browser tests on pushes and pull requests. Browser tests run against the built frontend, so build before running them locally. They include the confirmation flow, cancellation and retry, partial forecasts, source badges, and six viewport widths. If Chromium is already installed on the machine, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to its executable instead of downloading another copy.
+Run the build before browser tests; they use the built frontend and a local server on port `4174`. Tests use provider fixtures and do not require live API credentials. They cover backend validation and fallback, cancellations and shared scans, weather date matching, saved plans, themes, filters, exports, and mobile layouts. They do not establish that a live provider account or deployed environment works.
 
-The automated suite uses fixture provider responses, so it runs without API keys. It covers request validation, scan collection and caching, weather date matching, source citations, provider fallback, and request cancellation. A live destination scan still requires a valid TinyFish key and access to the provider endpoints.
+[GitHub Actions](.github/workflows/ci.yml) runs these checks on pushes and pull requests. See [CONTRIBUTING.md](CONTRIBUTING.md) for scripts, browser setup, and change-specific validation.
 
-Use `npm run format` to format the JavaScript, JSX, CSS, and runtime configuration consistently.
+## Repository map
 
-## Code layout
+| Location                                                           | Responsibility                                                              |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| `src/App.jsx`                                                      | Planning workflow, API requests, cancellation, and theme coordination.      |
+| `src/components/`                                                  | Notebook, results, evidence filters, issues, weather, and location choices. |
+| `src/planning.js`, `src/hooks/useStoredState.js`                   | Plan/date helpers, text export, and browser persistence.                    |
+| `server/app.js`, `server/index.js`                                 | HTTP routes, static serving, and server startup.                            |
+| `server/analyze.js`                                                | Collection, assessment, and coverage orchestration.                         |
+| `server/search.js`, `server/assessment.js`                         | TinyFish retrieval and AI/rules review.                                     |
+| `server/locations.js`, `server/weather.js`, `server/open-meteo.js` | Confirmed places, forecast signals, and weather transport/cache.            |
+| `server/scan-manager.js`, `server/http.js`                         | Rate limits, shared jobs, time budgets, retries, and cancellation.          |
+| `tests/`, `e2e/`                                                   | Node regression tests and Playwright browser tests.                         |
 
-- `server/index.js` starts the server; `server/app.js` defines API routes and static serving.
-- `server/analyze.js` coordinates collection, assessment, and coverage reporting.
-- `server/search.js`, `server/weather.js`, and `server/assessment.js` contain the provider workflows.
-- `server/locations.js` resolves and validates location confirmations; `server/scan-manager.js` manages limits and shared requests.
-- `server/open-meteo.js` handles weather-provider transport and caching.
-- `server/http.js` handles JSON requests, retries, and cancellation; `server/utils.js` holds shared helpers.
-- `src/App.jsx` coordinates the interface; `src/components/` contains date, issue, and weather components.
-- `tests/` contains the Node.js regression suite; `e2e/` contains Playwright browser tests.
+## Limitations
 
-## Known limitations
+Search can miss new, local-language, social-only, or poorly indexed reports. Publication dates, extracted pages, and AI conclusions may be incomplete or wrong. Broader search can return background material; a government-domain badge does not establish that an advisory is current. Forecasts are model-derived, date-limited, and may not represent local conditions or a particular river or route.
 
-- Search indexing may miss new, local-language, social-only, or poorly indexed updates.
-- A page appearing in search results does not guarantee that it is current or relevant to the exact travel dates.
-- Broader retries may return older/background pages; publication date and context still need review.
-- Forecast and river-discharge outputs are model data, not official warnings.
-- Provider outages, API quota limits, timeouts, or incomplete source extraction can reduce coverage.
-- An empty issue list means only that the collected evidence did not produce issues above the current screening threshold. It does **not** establish that travelling is safe.
-- Use official sources and local authorities for travel restrictions, emergency guidance, and time-critical decisions.
+Saved plans, theme preferences, and checklist items stay in the current browser; they are not account-synced or guaranteed to survive cleared storage. Server quotas and caches are in memory, not shared between replicas. Travel details and selected evidence are sent to the relevant providers to perform a scan; see the [data-handling decisions](DECISIONS.md#data-handling-and-credentials).
 
+TraceRisk remains a prototype. Use official authorities, emergency services, and transport operators for time-critical decisions.
