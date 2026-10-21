@@ -4,11 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k \"npm:server\" \"npm:client\"",
+    "dev": "concurrently -k \"npm:server:watch\" \"npm:client\"",
     "server": "node server/index.js",
     "client": "vite --host 127.0.0.1",
     "build": "vite build",
-    "preview": "vite preview --host 127.0.0.1"
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "node --test",
+    "format": "prettier --write server src tests vite.config.js package.json index.html render.yaml .prettierrc.json",
+    "format:check": "prettier --check server src tests vite.config.js package.json index.html render.yaml .prettierrc.json",
+    "server:watch": "node --watch server/index.js"
   },
   "dependencies": {
     "concurrently": "^9.2.0",
@@ -21,10 +25,11 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^5.0.0",
+    "prettier": "3.6.2",
     "vite": "^7.1.7"
   },
   "engines": {
-    "node": ">=20"
+    "node": "^20.19.0 || >=22.12.0"
   },
   "allowScripts": {
     "esbuild@0.28.2": true

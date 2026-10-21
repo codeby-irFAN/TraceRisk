@@ -20,7 +20,7 @@ Demo Video : https://drive.google.com/file/d/1RIJOVODbjnc7rzDPaioiRQqtznZLq5oE/v
 ## Tech stack
 
 - **Frontend:** React 19, Vite 7, GSAP, Lucide React
-- **Backend:** Node.js 20+, Express 5
+- **Backend:** Node.js 20.19+ or 22.12+, Express 5
 - **Search and page extraction:** TinyFish Search and Fetch APIs
 - **AI review:** Google Gemini (primary), Groq (fallback)
 - **Weather/flood context:** Open-Meteo public geocoding, forecast, and flood APIs
@@ -29,7 +29,7 @@ Demo Video : https://drive.google.com/file/d/1RIJOVODbjnc7rzDPaioiRQqtznZLq5oE/v
 
 ### 1. Install prerequisites
 
-Install **Node.js 20 or newer** and npm. Confirm they are available in the VS Code terminal:
+Install **Node.js 20.19+ or 22.12+** and npm. Confirm they are available in the VS Code terminal:
 
 ```powershell
 node -v
@@ -41,7 +41,7 @@ npm -v
 Open the project folder in VS Code, open **Terminal → New Terminal**, and run:
 
 ```powershell
-npm install
+npm ci
 ```
 
 ### 3. Configure API keys
@@ -129,9 +129,23 @@ React + Vite dashboard
 Before opening a pull request, run:
 
 ```powershell
-node --check server/index.js
+npm test
+npm run format:check
 npm run build
 ```
+
+The automated suite uses fixture provider responses, so it runs without API keys. It covers request validation, scan collection and caching, weather date matching, source citations, provider fallback, and request cancellation. A live destination scan still requires a valid TinyFish key and access to the provider endpoints.
+
+Use `npm run format` to format the JavaScript, JSX, CSS, and runtime configuration consistently.
+
+## Code layout
+
+- `server/index.js` starts the server; `server/app.js` defines API routes and static serving.
+- `server/analyze.js` coordinates collection, assessment, and coverage reporting.
+- `server/search.js`, `server/weather.js`, and `server/assessment.js` contain the provider workflows.
+- `server/http.js` handles JSON requests, retries, and cancellation; `server/utils.js` holds shared helpers.
+- `src/App.jsx` coordinates the interface; `src/components/` contains date, issue, and weather components.
+- `tests/` contains the Node.js regression suite.
 
 ## Known limitations
 

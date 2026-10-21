@@ -4,7 +4,7 @@ services:
     runtime: node
     region: singapore
     plan: free
-    buildCommand: npm install && npm run build
+    buildCommand: npm ci && npm run build
     startCommand: npm run server
     healthCheckPath: /api/health
     envVars:
@@ -13,5 +13,4 @@ services:
       - key: GEMINI_API_KEY
         sync: false
       - key: NODE_OPTIONS
-        value: "--dns-result-order=ipv4first"
-        
+        value: '--dns-result-order=ipv4first'
