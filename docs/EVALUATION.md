@@ -60,3 +60,9 @@ The trip workspace has automated checks for SQLite restart persistence, workspac
 These are deterministic fixture/API tests, not evidence of a calibrated safety decision rate. OSRM and GDACS were blocked by the cloud network proxy; direct air-quality requests also failed here. The implementation reports unavailable coverage and retains useful trip checks. Live provider contracts and commercial service availability must be verified on the deployment host. The earlier three-place timings above measure version 4 single-destination scans, not version 5 full itineraries.
 
 Local validation for this release: **67 Node tests and 15 Playwright tests passed**, along with formatting and a production build. The new desktop light/dark, mobile workspace and public briefing layouts were also visually inspected. Hosted CI and deployment availability are separate checks.
+
+## Version 5.1 account and usability checks
+
+Local verification passed **73 Node tests and 16 Playwright tests**, formatting and a production build. New checks cover salted password hashing, cookie session persistence/expiry/revocation, sign-out, incorrect passwords, password changes, CSRF rejection, account access isolation and legacy-trip import. The browser test creates and reloads a real two-stop Qutub Minar/Hawa Mahal itinerary through the account API without mocking landmark lookup or storage. Assistant tests verify dated weather citations, unsupported opening-hour handling and out-of-trip-date questions. Tile failure tests verify that route/stop overlays remain usable and a fallback message replaces failed backgrounds. Desktop/mobile account screens were visually inspected.
+
+Live Photon/CARTO requests were blocked by this cloud proxy. Broader landmark search and live map backgrounds still need deployment-host verification; bundled landmark search does not depend on that access. These checks do not establish production uptime, email ownership verification or email password recovery.

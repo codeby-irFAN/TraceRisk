@@ -1,5 +1,5 @@
 import logo from '../../graphics/logo.png';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import {
   Compass,
   MapPinned,
@@ -11,19 +11,13 @@ import {
   Sun,
   ArrowUpRight,
 } from 'lucide-react';
-import {
-  api,
-  place,
-  when,
-  workspaceKey,
-  storeKey,
-  stored,
-  remember,
-} from './api';
+import { api, place, when, stored, remember } from './api';
+import AuthPanel, { PasswordForm } from './AuthPanel';
 import TripComposer from './TripComposer';
 import TripDetails from './TripDetails';
 export default function Workspace() {
-  const [key, setKey] = useState(workspaceKey),
+  const [user, setUser] = useState(null),
+    [authLoading, setAuthLoading] = useState(true),
     [workspace, setWorkspace] = useState(null),
     [trips, setTrips] = useState([]),
     [selected, setSelected] = useState(null),
@@ -33,29 +27,69 @@ export default function Workspace() {
     [editing, setEditing] = useState(null),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
-    [restore, setRestore] = useState(''),
     [search, setSearch] = useState(''),
     [theme, setTheme] = useState(stored('tracerisk-theme') || 'light');
+  useEffect(() => {
+    let active = true;
+    api('/auth/session')
+      .then((data) => {
+        if (active) setUser(data.user);
+      })
+      .catch((e) => {
+        if (active) setError(e.message);
+      })
+      .finally(() => {
+        if (active) setAuthLoading(false);
+      });
+    const signedOut = () => {
+      setUser(null);
+      setWorkspace(null);
+      setTrips([]);
+      setTrip(null);
+      setSelected(null);
+      setComposer(false);
+    };
+    window.addEventListener('tracerisk:signout', signedOut);
+    return () => {
+      active = false;
+      window.removeEventListener('tracerisk:signout', signedOut);
+    };
+  }, []);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     remember('tracerisk-theme', theme);
   }, [theme]);
+  const currentView = useRef({ userId: user?.id, selected });
+  currentView.current = { userId: user?.id, selected };
   const refresh = useCallback(async () => {
-    if (!key) return;
+    if (!user) return;
     const [w, list, detail] = await Promise.all([
       api('/workspace'),
       api('/trips'),
       selected ? api(`/trips/${selected}`) : Promise.resolve(null),
     ]);
+    if (
+      currentView.current.userId !== user.id ||
+      currentView.current.selected !== selected
+    )
+      return;
     setWorkspace(w);
     setTrips(list.trips);
     if (detail) setTrip(detail.trip);
-  }, [key, selected]);
+  }, [user, selected]);
   useEffect(() => {
     let active = true;
     const load = () =>
       refresh().catch((e) => {
-        if (active) setError(e.message);
+        if (active) {
+          setError(e.message);
+          if (e.status === 401) {
+            setUser(null);
+            setTrips([]);
+            setTrip(null);
+            setSelected(null);
+          }
+        }
       });
     load();
     const timer = setInterval(load, trip?.checking ? 3000 : 30000);
@@ -74,13 +108,6 @@ export default function Workspace() {
     } finally {
       setBusy(false);
     }
-  }
-  async function create() {
-    await run(async () => {
-      const data = await api('/workspaces', {});
-      storeKey(data.key);
-      setKey(data.key);
-    });
   }
   async function save(draft) {
     const result = await api(
@@ -130,30 +157,34 @@ export default function Workspace() {
             TraceRisk<span>YOUR TRAVEL FIELD GUIDE</span>
           </strong>
         </a>
-        <div className="rail-label">WORKSPACE</div>
-        <nav>
-          {[
-            ['Trips', MapPinned],
-            ['Updates', Bell],
-            ['Travel desk', BriefcaseBusiness],
-            ['Settings', Settings],
-          ].map(([name, Icon]) => (
-            <button
-              className={view === name ? 'active' : ''}
-              key={name}
-              onClick={() => {
-                setView(name);
-                if (name !== 'Trips') setSelected(null);
-              }}
-            >
-              <Icon size={19} />
-              {name}
-              {name === 'Updates' && unread > 0 && (
-                <span className="nav-count">{unread}</span>
-              )}
-            </button>
-          ))}
-        </nav>
+        <div className="rail-label">
+          {user ? 'WORKSPACE' : 'TRAVEL PLANNING'}
+        </div>
+        {user && (
+          <nav>
+            {[
+              ['Trips', MapPinned],
+              ['Updates', Bell],
+              ['Travel desk', BriefcaseBusiness],
+              ['Settings', Settings],
+            ].map(([name, Icon]) => (
+              <button
+                className={view === name ? 'active' : ''}
+                key={name}
+                onClick={() => {
+                  setView(name);
+                  if (name !== 'Trips') setSelected(null);
+                }}
+              >
+                <Icon size={19} />
+                {name}
+                {name === 'Updates' && unread > 0 && (
+                  <span className="nav-count">{unread}</span>
+                )}
+              </button>
+            ))}
+          </nav>
+        )}
         <div className="rail-bottom">
           <p>
             More clarity.
@@ -174,7 +205,8 @@ export default function Workspace() {
       <main className="workspace-main">
         <header className="workspace-top">
           <span>
-            <Compass size={16} /> Trip intelligence / {view}
+            <Compass size={16} />{' '}
+            {user ? `Your travel workspace / ${view}` : 'Welcome to TraceRisk'}
           </span>
           <div className="inline">
             <button
@@ -185,7 +217,7 @@ export default function Workspace() {
             >
               {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
             </button>
-            {key && (
+            {user && (
               <button
                 className="primary"
                 onClick={() => {
@@ -206,71 +238,17 @@ export default function Workspace() {
             </button>
           </div>
         )}
-        {!key ? (
-          <section className="workspace-welcome">
-            <p className="eyebrow">A LITTLE MORE PREPARED. EVERY STEP.</p>
-            <h1>Follow the whole journey.</h1>
-            <p>
-              Plan your stops, understand the evidence and keep an eye on what
-              changes. One calm place for your next trip.
-            </p>
-            <button className="primary" disabled={busy} onClick={create}>
-              Create my private workspace <ArrowUpRight size={17} />
-            </button>
-            <div className="welcome-features">
-              {[
-                [
-                  '01',
-                  'Plan the route',
-                  'Check your stops and supported road corridors.',
-                ],
-                [
-                  '02',
-                  'Watch for changes',
-                  'Keep meaningful updates in one trip timeline.',
-                ],
-                [
-                  '03',
-                  'Travel with context',
-                  'Inspect sources and share a clear briefing.',
-                ],
-              ].map(([n, t, d]) => (
-                <div key={n}>
-                  <span>{n}</span>
-                  <h3>{t}</h3>
-                  <p>{d}</p>
-                </div>
-              ))}
-            </div>
-            <details>
-              <summary>Already have a workspace? Restore it</summary>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  run(async () => {
-                    await api('/workspace', undefined, 'GET', restore.trim());
-                    storeKey(restore.trim());
-                    setKey(restore.trim());
-                  });
-                }}
-              >
-                <label>
-                  Recovery key
-                  <input
-                    type="password"
-                    value={restore}
-                    onChange={(e) => setRestore(e.target.value)}
-                    autoComplete="off"
-                  />
-                </label>
-                <button disabled={busy}>Restore workspace</button>
-              </form>
-            </details>
-            <p className="muted">
-              Your recovery key stays in this browser. Save a copy in Settings
-              to reopen your trips on another device.
-            </p>
-          </section>
+        {authLoading ? (
+          <p role="status">Opening TraceRisk…</p>
+        ) : !user ? (
+          <AuthPanel
+            onSignedIn={(user) => {
+              setUser(user);
+              setView('Trips');
+              setSelected(null);
+              setError('');
+            }}
+          />
         ) : (
           <>
             {view === 'Trips' && selected ? (
@@ -430,7 +408,7 @@ export default function Workspace() {
                           <span>{t.client || `${t.stops.length} stops`}</span>
                           <span>
                             {t.latest
-                              ? `${t.latest.issueCount} signals`
+                              ? `${t.latest.issueCount} updates`
                               : 'Ready to check'}
                             {t.unreadCount ? ` · ${t.unreadCount} new` : ''}
                           </span>
@@ -453,8 +431,8 @@ export default function Workspace() {
                 {view === 'Travel desk' && (
                   <p className="notice">
                     Set your agency name, contact details and briefing colour in
-                    Settings. This is one private workspace; shared team roles,
-                    billing and client logins are not included.
+                    Settings, then open a trip to prepare a briefing for your
+                    client.
                   </p>
                 )}
               </>
@@ -542,44 +520,34 @@ export default function Workspace() {
                     </button>
                   </form>
                 )}
-                <h3>Workspace recovery key</h3>
+                <h3>Your account</h3>
                 <p>
-                  Anyone with this key can access your trips. Store it
-                  privately. There is no email-based recovery.
+                  {user.name} · {user.email}
                 </p>
-                <details>
-                  <summary>Show recovery key</summary>
-                  <code className="recovery-key">{key}</code>
-                  <button
-                    onClick={() =>
-                      run(() => navigator.clipboard.writeText(key))
-                    }
-                  >
-                    Copy key
-                  </button>
-                </details>
+                <PasswordForm />
                 <h3>Trip Watch status</h3>
                 <p>
                   {workspace?.monitoring
-                    ? 'Scheduled monitoring is running.'
-                    : 'Scheduled monitoring is disabled on this server. Manual checks remain available.'}
+                    ? 'Your saved trips are checked automatically.'
+                    : 'Automatic updates are currently paused. You can still check a trip yourself.'}
                 </p>
                 <p>
-                  {workspace?.persistent
-                    ? 'This server saves trips to a database. Your host must retain its database disk across deployments.'
-                    : 'This server uses temporary storage. Trips will be lost when it restarts.'}
+                  {!workspace?.persistent &&
+                    'This demo does not keep trips after a restart.'}
                 </p>
                 <button
                   onClick={() => {
-                    storeKey(null);
-                    setKey(null);
-                    setWorkspace(null);
-                    setTrips([]);
-                    setTrip(null);
-                    setSelected(null);
+                    run(async () => {
+                      await api('/auth/logout', {});
+                      setUser(null);
+                      setWorkspace(null);
+                      setTrips([]);
+                      setTrip(null);
+                      setSelected(null);
+                    });
                   }}
                 >
-                  Lock / leave workspace on this browser
+                  Sign out
                 </button>
               </section>
             )}

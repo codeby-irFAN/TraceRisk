@@ -95,7 +95,7 @@ export function buildQueries(destination, _startDate, _endDate, location) {
     domainType: id === 'official-advisories' ? 'web' : 'news',
     recencyMinutes:
       id === 'health' || id === 'official-advisories' ? 43_200 : 20_160,
-    query: `${place} ${terms}`,
+    query: `${id === 'regional-news' && context.landmark ? `"${context.landmark.replace(/["\\]/g, '')}" ${context.city} India` : place} ${terms}`,
     fallbackQuery: `${place} ${broad}`,
   }));
 }

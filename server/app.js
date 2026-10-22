@@ -1,3 +1,4 @@
+import { createAuthRouter } from './auth.js';
 import { createTripStore } from './trip-store.js';
 import { createTripService } from './trip-service.js';
 import { createTripRouter } from './trip-api.js';
@@ -71,6 +72,7 @@ export function createApp({
     ...locationOptions,
   });
   app.use(express.json({ limit: '32kb' }));
+  app.use('/api/auth', createAuthRouter(tripStore));
 
   app.get('/api/health', (_req, res) => {
     res.json({

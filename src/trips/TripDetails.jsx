@@ -21,25 +21,35 @@ export function Report({ report, detailed = false }) {
         <div>
           <p className="eyebrow">
             {report.kind === 'checkpoint'
-              ? 'ROUTE CORRIDOR'
+              ? 'ALONG THE WAY'
               : report.kind === 'origin'
                 ? 'ORIGIN'
-                : 'ITINERARY STOP'}
+                : 'YOUR STOP'}
           </p>
           <h3>{report.label}</h3>
           <small>
             {report.startDate} → {report.endDate}
           </small>
         </div>
-        <span className="pill">{result.issues?.length || 0} signals</span>
+        <span className="pill">{result.issues?.length || 0} updates</span>
       </div>
       <h4>{result.decision?.title}</h4>
+      {result.placeContext && (
+        <p className="muted">{result.placeContext.note}</p>
+      )}
       <p>{result.decision?.detail}</p>
       <div className="coverage-grid">
         {result.decision?.checks?.map((c) => (
           <div key={c.id}>
             <strong>{c.label}</strong>
-            <span className={`status-${c.status}`}>{c.status}</span>
+            <span className={`status-${c.status}`}>
+              {{
+                checked: 'Available',
+                searched: 'Checked',
+                partial: 'Some information missing',
+                unknown: 'Check before leaving',
+              }[c.status] || c.status}
+            </span>
             <small>{c.detail}</small>
           </div>
         ))}
@@ -166,8 +176,8 @@ export function Briefing({ data }) {
         {data.expiresAt && `Link expires ${when(data.expiresAt)}.`}
       </p>
       <p className="notice">
-        A snapshot of available evidence, forecasts and departure checks.
-        Conditions can change; this briefing does not guarantee safety.
+        Saved travel updates and departure checks. Conditions can change; check
+        again before you leave.
       </p>
       <ol className="itinerary-line">
         {data.stops.map((s) => (
@@ -309,18 +319,18 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
         <>
           <div className="metric-grid">
             <div className="trip-card">
-              <span>REPORTS & FORECASTS</span>
+              <span>TRAVEL UPDATES</span>
               <strong>{latest?.issueCount ?? '—'}</strong>
-              <small>{latest?.highSignals || 0} higher-impact signals</small>
+              <small>{latest?.highSignals || 0} need closer attention</small>
             </div>
             <div className="trip-card">
-              <span>PLACES CHECKED</span>
+              <span>STOPS REVIEWED</span>
               <strong>
                 {latest
                   ? `${latest.reportsChecked}/${latest.reportsTotal}`
                   : '—'}
               </strong>
-              <small>Stops and supported road checkpoints</small>
+              <small>Your stops and nearby route areas</small>
             </div>
             <div className="trip-card">
               <span>TRAVEL PROFILE</span>
@@ -381,11 +391,10 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
               {r.roadNames?.slice(0, 5).join(', ')}
             </p>
           ))}
-          <h3>Regional findings</h3>
+          <h3>Nearby travel updates</h3>
           <p className="muted">
-            These findings have no supported incident coordinates. They may
-            affect the region; a specific road intersection has not been
-            established.
+            These reports cover the surrounding area. Open a source to see
+            whether it affects your route.
           </p>
           {latest?.reports.flatMap((r) =>
             r.result.issues
@@ -410,9 +419,8 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
       {tab === 'Evidence' && (
         <>
           <p className="notice">
-            Open the original sources, inspect event dates and compare
-            supporting or conflicting reports. Confidence describes evidence
-            support, not a safety probability.
+            Open a source to read the full report and check when it was
+            published.
           </p>
           {latest?.reports.map((r) => (
             <Report key={r.key} report={r} detailed />
@@ -469,9 +477,7 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
                 }
               >
                 <option value="all">All meaningful changes</option>
-                <option value="high">
-                  Higher-impact new signals + updates
-                </option>
+                <option value="high">Important new updates and changes</option>
               </select>
             </label>
           </div>
@@ -484,7 +490,13 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
             trip.timeline.map((e) => (
               <article className="timeline-event" key={e.id}>
                 <span className="pill">
-                  {e.kind}
+                  {{
+                    new: 'New update',
+                    changed: 'Updated',
+                    resolved: 'Reported resolved',
+                    'not-observed': 'Not seen in the latest check',
+                    coverage: 'Information updated',
+                  }[e.kind] || e.kind}
                   {!e.read && ' · new'}
                 </span>
                 <small>{when(e.at)}</small>
@@ -548,9 +560,8 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
             Compare this option
           </button>
           <p className="muted">
-            Road alternatives depend on the routing provider. Train and flight
-            fares, routes and timetables are not available here. Fewer reports
-            do not establish a safer option.
+            Choose the dates that work for you, then review the weather and
+            travel updates below.
           </p>
           {trip.comparison && (
             <>
@@ -565,25 +576,50 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
                   <div className="comparison" key={label}>
                     <h3>{label}</h3>
                     <p>
-                      {s.issueCount} signals · {s.reportsChecked}/
-                      {s.reportsTotal} places with sources
+                      {!s.reportsChecked
+                        ? 'Live updates are unavailable. Check again before leaving.'
+                        : s.issueCount
+                          ? `${s.issueCount} travel update${s.issueCount === 1 ? '' : 's'} to review`
+                          : 'No disruptions found in the updates checked'}
                     </p>
-                    <p>Collected {when(s.checkedAt)}</p>
                     <p>
-                      {s.route.routes?.find(
-                        (r) => r.id === s.route.selectedRouteId,
-                      )?.durationMinutes || 'Unavailable'}{' '}
-                      min driving estimate
+                      {s.reportsChecked} of {s.reportsTotal} places have recent
+                      information
                     </p>
-                    <p>Coverage: {s.coverage}</p>
+                    {s.route.routes?.find(
+                      (r) => r.id === s.route.selectedRouteId,
+                    )?.durationMinutes > 0 && (
+                      <p>
+                        About{' '}
+                        {
+                          s.route.routes.find(
+                            (r) => r.id === s.route.selectedRouteId,
+                          ).durationMinutes
+                        }{' '}
+                        minutes by road
+                      </p>
+                    )}
+                    <p>
+                      {s.reports
+                        ?.flatMap((r) => r.result.weather?.dailyForecast || [])
+                        .slice(0, 2)
+                        .map(
+                          (d) =>
+                            `${d.date}: ${d.condition || 'Forecast'}${d.maxC != null ? `, up to ${d.maxC}°C` : ''}`,
+                        )
+                        .join(' · ') ||
+                        'Weather forecast is not available for these dates yet.'}
+                    </p>
+                    <small>Updated {when(s.checkedAt)}</small>
                   </div>
                 ))}
               </div>
-              {trip.comparison.notes.map((n) => (
-                <p className="notice" key={n}>
-                  {n}
-                </p>
-              ))}
+              <details>
+                <summary>How comparisons work</summary>
+                {trip.comparison.notes.map((n) => (
+                  <p key={n}>{n}</p>
+                ))}
+              </details>
               {trip.comparison.candidate.reports.map((r) => (
                 <Report key={r.key} report={r} />
               ))}
@@ -631,7 +667,7 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
             <div className="assistant-answer">
               <p style={{ whiteSpace: 'pre-line' }}>{answer.answer}</p>
               <Sources sources={answer.citations} />
-              <h4>Information limits</h4>
+              <h4>Keep in mind</h4>
               <ul>
                 {answer.missing.map((m) => (
                   <li key={m}>{m}</li>
@@ -645,9 +681,8 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
         <section className="trip-card">
           <h2>A briefing you can take with you.</h2>
           <p>
-            Create a private link to a frozen snapshot. Anyone with the link can
-            read it for seven days. Creating a new link replaces the previous
-            one.
+            Share a saved copy of this briefing. Anyone with the link can read
+            it for seven days. You can revoke the link at any time.
           </p>
           <label className="check">
             <input

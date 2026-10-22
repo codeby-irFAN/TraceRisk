@@ -205,7 +205,7 @@ export function coverageChecks(result) {
         : result.weather?.forecastDaysMatched
           ? 'partial'
           : 'unknown',
-      `${result.weather?.forecastDaysMatched || 0} of ${result.weather?.tripDays || 0} days covered`,
+      `${result.weather?.forecastDaysMatched || 0} of ${result.weather?.tripDays || 0} travel days available`,
     ],
     [
       'transport',
@@ -233,8 +233,9 @@ export function coverageChecks(result) {
       result.environment?.airQuality?.status === 'available'
         ? 'checked'
         : 'unknown',
-      result.environment?.airQuality?.note ||
-        'No air-quality forecast was collected.',
+      result.environment?.airQuality?.status === 'available'
+        ? 'Air-quality forecast available for your trip.'
+        : 'Check air quality closer to departure.',
     ],
   ];
   return groups.map(([id, label, status, detail]) => ({
@@ -246,10 +247,11 @@ export function coverageChecks(result) {
 }
 function laneState(lanes) {
   const done = lanes.filter((s) => s.succeeded).length;
-  const reports = lanes.reduce((n, s) => n + (s.resultCount || 0), 0);
   return [
     done === lanes.length && done ? 'searched' : done ? 'partial' : 'unknown',
-    `${done}/${lanes.length} searches completed; ${reports} leads. Search coverage is not an official all-clear.`,
+    done
+      ? 'Recent local reports checked.'
+      : 'Live updates are unavailable. Check with your operator.',
   ];
 }
 export function decisionFor(result) {
@@ -274,10 +276,14 @@ export function decisionFor(result) {
         ? 'Review this part of your plan'
         : issues.length
           ? 'Plan around the reported conditions'
-          : 'Your plan and next checks are ready',
+          : result.sources?.length
+            ? 'No major disruptions found in the updates checked'
+            : 'Check local conditions before leaving',
     detail: issues.length
       ? `${issues.length} report or forecast signal${issues.length === 1 ? '' : 's'} to review. Confirm current applicability with the cited authority or operator.`
-      : 'No disruption was established in the information checked. Continue routine checks and review the coverage below.',
+      : result.sources?.length
+        ? 'Review the forecast and departure checklist below.'
+        : 'Live updates could not be collected. Your itinerary and departure checklist are still available.',
     checks,
     gaps: unknown,
     safetyProbability: null,
@@ -370,9 +376,12 @@ export function snapshotChanges(
     changes.push({
       id: hash(`${time}|coverage`),
       kind: 'coverage',
-      title: 'Information coverage changed',
+      title: 'Availability of travel updates changed',
       at: time,
-      detail: `Coverage changed from ${before.coverage} to ${after.coverage}.`,
+      detail:
+        after.coverage === 'unavailable'
+          ? 'Live updates could not be collected in this check. Try again before leaving.'
+          : 'New information is available. Review the latest trip check.',
       sourceLinks: [],
       read: false,
     });
@@ -415,90 +424,246 @@ export function resolutionReports(sources, now = Date.now()) {
         })),
     );
 }
-export function answerTripQuestion(trip, question) {
+export function answerTripQuestion(trip, question, now = Date.now()) {
   const q = normalText(question),
     latest = trip.latest;
   if (!latest)
     return {
-      answer:
-        'Run a trip check first. I need retrieved trip evidence to answer this question.',
+      answer: 'Check this trip first so I can use its latest travel updates.',
       citations: [],
-      missing: ['No completed trip check.'],
+      missing: [],
     };
-  if (/why|change|clear|yesterday|timeline/.test(q)) {
+  const citations = [],
+    missing = [];
+  const cite = (source) => {
+    if (!source?.url || !/^https?:\/\//.test(source.url)) return '';
+    let index = citations.findIndex((s) => s.url === source.url);
+    if (index < 0) {
+      index = citations.length;
+      citations.push({
+        title: source.title || 'Original report',
+        url: source.url,
+        label: `[${index + 1}]`,
+      });
+    }
+    return `[${index + 1}]`;
+  };
+  const stale = now - Date.parse(latest.checkedAt) > 86400000;
+  if (stale)
+    missing.push(
+      'This briefing is more than a day old. Check the trip again for current updates.',
+    );
+  if (/what.*chang|why.*chang|timeline|since|resolved|cleared/.test(q)) {
     const events = (trip.timeline || []).slice(0, 5);
     return {
       answer: events.length
         ? events
-            .map((e) => `${e.at.slice(0, 10)}: ${e.title}. ${e.detail}`)
+            .map(
+              (e) =>
+                `${e.at.slice(0, 10)}: ${e.title}. ${e.detail} ${(e.sourceLinks || []).map(cite).join(' ')}`,
+            )
             .join('\n\n')
-        : 'No meaningful change has been recorded yet. Another completed check is needed to compare conditions.',
-      citations: events.flatMap((e) => e.sourceLinks || []).slice(0, 8),
-      missing: [
-        'A report disappearing does not establish that a disruption has cleared.',
-      ],
+        : 'No changes recorded yet. Check the trip again to compare it with the previous update.',
+      citations,
+      missing,
     };
   }
-  const filter = /bus|road|drive|car|train|flight|transport/.test(q)
-    ? (i) =>
-        [
-          'Infrastructure / Transit',
-          'Environmental',
-          'Geopolitical & Civil',
-        ].includes(i.dimension)
-    : /weather|rain|flood|heat|air quality/.test(q)
-      ? (i) => i.dimension === 'Environmental'
-      : () => true;
-  const selected = latest.reports
-    .flatMap((r) =>
-      (r.result.issues || [])
-        .filter(filter)
-        .map((issue) => ({ report: r, issue })),
-    )
-    .slice(0, 5);
-  const supported =
-    /bus|road|drive|car|train|flight|transport|weather|rain|flood|heat|air quality|check|leav|tomorrow|safe|risk|precaution|child|mobilit|trip|report|source/.test(
+  if (
+    /itinerary|my stops|which places|where.*visit|when.*arriv|when.*depart|trip dates/.test(
       q,
+    )
+  )
+    return {
+      answer: trip.stops
+        .map(
+          (s, i) =>
+            `${i + 1}. ${s.location.name}${s.location.city ? `, ${s.location.city}` : ''}: ${s.startDate} to ${s.endDate}`,
+        )
+        .join('\n'),
+      citations: [],
+      missing,
+    };
+  if (/compar|alternative|better route|best route|different date/.test(q)) {
+    if (!trip.comparison)
+      return {
+        answer:
+          'Open Compare to check another departure date or an available road route. I need that comparison before I can explain the differences.',
+        citations: [],
+        missing,
+      };
+    const candidate = trip.comparison.candidate;
+    const lines = [
+      `Your saved plan has ${latest.issueCount} travel updates to review. The option ${trip.comparison.dayOffset} ${trip.comparison.dayOffset === 1 ? 'day' : 'days'} later has ${candidate.issueCount}.`,
+      'Compare the actual updates and weather in the Compare tab; the number of reports alone does not tell us which option is safer.',
+    ];
+    for (const r of candidate.reports)
+      for (const i of r.result.issues || [])
+        lines.push(
+          `${r.label}: ${i.summary || i.title} ${r.result.sources
+            .filter((s) => i.sourceIds?.includes(s.id))
+            .map(cite)
+            .join(' ')}`,
+        );
+    return { answer: lines.slice(0, 6).join('\n\n'), citations, missing };
+  }
+  const requested =
+    q.match(/\b20\d{2}-\d{2}-\d{2}\b/)?.[0] ||
+    (/tomorrow/.test(q)
+      ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(
+          new Date(now + DAY),
+        )
+      : null);
+  let reports = latest.reports || [];
+  const targeted = reports.filter((r) =>
+    [r.location?.name, r.location?.city]
+      .filter(Boolean)
+      .some((p) => q.includes(normalText(p))),
+  );
+  if (targeted.length) reports = targeted;
+  if (requested) {
+    reports = reports.filter(
+      (r) => r.startDate <= requested && r.endDate >= requested,
     );
-  if (!supported)
+    if (!reports.length)
+      return {
+        answer: `Your saved checks do not cover ${requested}. Update your itinerary dates and check the trip again.`,
+        citations: [],
+        missing,
+      };
+  }
+  if (
+    /opening|open today|open tomorrow|open time|hours|ticket|entry fee|timings/.test(
+      q,
+    )
+  ) {
+    const lines = [];
+    for (const r of reports) {
+      const name = r.location?.name || r.label;
+      const passages = (r.result.sources || [])
+        .filter((s) => s.fetched && s.quality?.relevant !== false)
+        .flatMap((s) =>
+          String(s.text || '')
+            .split(/\n+|(?<=[.!?])\s+/)
+            .filter(
+              (p) =>
+                normalText(p).includes(normalText(name)) &&
+                /opening hours|opens? at|entry timings|visiting hours|ticket price|entry fee/i.test(
+                  p,
+                ),
+            )
+            .slice(0, 1)
+            .map((p) => `${p.slice(0, 400)} ${cite(s)}`),
+        );
+      lines.push(
+        passages.length
+          ? `${name}: ${passages.join(' ')}`
+          : `I do not have verified opening hours or ticket prices for ${name}. Check the attraction’s official website before visiting.`,
+      );
+    }
+    return { answer: lines.join('\n\n'), citations, missing };
+  }
+  const weather =
+      /weather|rain|flood|heat|temperature|forecast|air quality|aqi/.test(q),
+    transport = /bus|road|drive|car|train|flight|transport/.test(q);
+  if (
+    !weather &&
+    !transport &&
+    !/check|leav|safe|risk|precaution|child|mobilit|trip|report|source|advice|recommend|help|should|visit/.test(
+      q,
+    )
+  )
     return {
       answer:
-        'I can explain this trip’s transport, weather, precautions, sources and recorded changes. The retrieved evidence does not support an answer to that question.',
+        'I can help with your itinerary, weather, transport, departure checks and changes. Ask about one of your saved stops.',
       citations: [],
-      missing: ['This assistant answers from the saved trip evidence only.'],
+      missing,
     };
-  const citations = [],
-    lines = selected.map(({ report, issue }) => {
-      const ids = issue.sourceIds || [];
-      const refs = report.result.sources
-        .filter((s) => ids.includes(s.id))
-        .map((s) => {
-          const index = citations.length + 1;
-          citations.push({
-            title: s.title,
-            url: s.url,
-            label: `[${index}]`,
-            checkedAt: report.result.checkedAt,
-          });
-          return `[${index}]`;
-        });
-      return `${report.label}: ${issue.summary || issue.title} ${refs.join(' ')}\n${impactFor(issue, { ...trip.preferences, mode: /bus/.test(q) ? 'bus' : trip.preferences.mode }).join(' ')}`;
-    });
-  const checks = latest.reports
+  const lines = [];
+  if (weather)
+    for (const r of reports) {
+      const days = (r.result.weather?.dailyForecast || []).filter(
+        (d) => !requested || d.date === requested,
+      );
+      for (const d of days.slice(0, 3)) {
+        const refs = (r.result.sources || [])
+          .filter((s) => s.group === 'weather-api')
+          .map(cite)
+          .join(' ');
+        lines.push(
+          `${r.label}, ${d.date}: ${d.condition || 'Forecast available'}${d.minC != null && d.maxC != null ? `, ${d.minC}–${d.maxC}°C` : ''}${d.precipitationMm != null ? `, ${d.precipitationMm} mm rain` : ''}. ${refs}`,
+        );
+      }
+      if (/air quality|aqi/.test(q)) {
+        const air = (r.result.environment?.airQuality?.days || []).filter(
+          (d) => !requested || d.date === requested,
+        );
+        air.forEach((d) =>
+          lines.push(
+            `${r.label}, ${d.date}: forecast air quality ${d.usAqi <= 50 ? 'good' : d.usAqi <= 100 ? 'moderate' : d.usAqi <= 150 ? 'unhealthy for sensitive travellers' : 'unhealthy'}. ${(
+              r.result.sources || []
+            )
+              .filter((s) => s.group === 'air-quality-api')
+              .map(cite)
+              .join(' ')}`,
+          ),
+        );
+        if (!air.length)
+          missing.push(
+            `No air-quality forecast is available for ${r.label} on those dates.`,
+          );
+      }
+      if (!days.length && !/air quality|aqi/.test(q))
+        missing.push(
+          `No daily weather forecast is available for ${r.label} on those dates yet.`,
+        );
+    }
+  let selected = reports
     .flatMap((r) =>
-      (r.result.nextSteps || []).map(
-        (s) => `${r.label}: ${s.title} — ${s.detail}`,
-      ),
+      (r.result.issues || [])
+        .filter((i) => !weather || i.dimension === 'Environmental')
+        .map((issue) => ({ report: r, issue })),
     )
     .slice(0, 4);
+  if (transport)
+    selected = selected.filter(({ issue }) =>
+      [
+        'Infrastructure / Transit',
+        'Environmental',
+        'Geopolitical & Civil',
+      ].includes(issue.dimension),
+    );
+  for (const { report, issue } of selected)
+    lines.push(
+      `${report.label}: ${issue.summary || issue.title} ${(
+        report.result.sources || []
+      )
+        .filter((s) => issue.sourceIds?.includes(s.id))
+        .map(cite)
+        .join(
+          ' ',
+        )}\n${impactFor(issue, { ...trip.preferences, mode: /bus/.test(q) ? 'bus' : /train/.test(q) ? 'train' : /flight/.test(q) ? 'flight' : trip.preferences.mode }).join(' ')}`,
+    );
+  if (transport && /train|flight/.test(q))
+    missing.push(
+      'I do not have live train or flight status. Check your booking with the operator.',
+    );
+  if (!lines.length)
+    lines.push(
+      'No matching disruption was found in the saved updates. Here is what to check before leaving:',
+    );
+  if (!weather || !lines.length || lines[0].startsWith('No matching'))
+    for (const r of reports.slice(0, 2))
+      for (const check of (r.result.nextSteps || []).slice(0, 2))
+        lines.push(
+          `${r.label}: ${check.title}. ${check.detail || ''} ${cite(check)}`,
+        );
+  if (!reports.some((r) => r.result.sources?.length))
+    missing.push(
+      'Live reports are unavailable. Confirm local conditions with your operator or accommodation.',
+    );
   return {
-    answer: lines.length
-      ? lines.join('\n\n')
-      : `No matching disruption was established in the saved evidence. Before leaving:\n${checks.join('\n')}`,
+    answer: lines.join('\n\n'),
     citations,
-    missing: [
-      ...new Set(latest.reports.flatMap((r) => r.result.decision?.gaps || [])),
-      'No guarantee of safety; check when this briefing was collected.',
-    ],
+    missing: [...new Set(missing)],
   };
 }

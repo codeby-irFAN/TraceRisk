@@ -153,14 +153,21 @@ test('plan, check, inspect evidence, compare, ask and share a trip', async ({
     return r.fulfill({ json: { trip } });
   });
   await page.goto('/');
+  await page.getByLabel('Your name').fill('Test traveller');
   await page
-    .getByRole('button', { name: /Create my private workspace/ })
+    .getByLabel('Email', { exact: true })
+    .fill('trip-traveller@example.com');
+  await page
+    .getByLabel('Password', { exact: true })
+    .fill('test-travel-password-42');
+  await page
+    .getByRole('button', { name: 'Create account', exact: true })
     .click();
   await page.getByRole('button', { name: 'New trip', exact: true }).click();
   await page.getByLabel('Trip name').fill('Mountain holiday');
   await page.getByLabel('Destination', { exact: true }).fill('Delhi');
   await page.getByRole('button', { name: 'Find place' }).click();
-  await page.getByRole('button', { name: /Delhi, Delhi/ }).click();
+  await page.getByRole('button', { name: /Delhi · India/ }).click();
   await page.getByRole('button', { name: 'Save itinerary' }).click();
   await page.getByRole('button', { name: 'Check trip', exact: true }).click();
   await expect(
@@ -175,8 +182,14 @@ test('plan, check, inspect evidence, compare, ask and share a trip', async ({
   await expect(
     page.getByRole('link', { name: /District road advisory/ }).first(),
   ).toHaveAttribute('href', source.url);
+  await page.route(/https:\/\/[abcd]\.basemaps\.cartocdn\.com\/.*/, (r) =>
+    r.fulfill({ status: 503, body: '' }),
+  );
   await page.getByRole('tab', { name: 'Route map', exact: true }).click();
   await expect(page.getByLabel('Interactive trip route map')).toBeVisible();
+  await expect(
+    page.getByText(/The map background could not load/),
+  ).toBeVisible();
   await page.getByRole('tab', { name: 'What changed', exact: true }).click();
   await expect(page.getByText('A new report appeared.')).toBeVisible();
   await page.getByRole('tab', { name: 'Compare', exact: true }).click();
@@ -184,6 +197,12 @@ test('plan, check, inspect evidence, compare, ask and share a trip', async ({
   await expect(
     page.getByRole('heading', { name: 'Saved departure' }),
   ).toBeVisible();
+  await expect(page.getByText('Unavailable min driving estimate')).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByText('Coverage: collected with stated gaps'),
+  ).toHaveCount(0);
   await page.getByRole('tab', { name: 'Assistant', exact: true }).click();
   await page
     .getByRole('button', { name: 'Ask trip assistant', exact: true })
@@ -251,4 +270,107 @@ test('mobile workspace is readable and private briefing renders without a key', 
     path: '/tmp/tracerisk-briefing-mobile.png',
     fullPage: true,
   });
+});
+
+test('account sign-in persists across reload, signs out and protects saved trips', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await expect(page.getByLabel('Your name')).toBeVisible();
+  await page.screenshot({
+    path: '/tmp/tracerisk-auth-desktop.png',
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: '/tmp/tracerisk-auth-mobile.png',
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 1280, height: 820 });
+
+  await page.getByLabel('Your name').fill('Account traveller');
+  await page
+    .getByLabel('Email', { exact: true })
+    .fill('account-browser@example.com');
+  await page
+    .getByLabel('Password', { exact: true })
+    .fill('secure-travel-password-43');
+  await page
+    .getByRole('button', { name: 'Create account', exact: true })
+    .click();
+  await expect(
+    page.getByRole('heading', { name: 'Good plans start here.' }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByRole('heading', { name: 'Good plans start here.' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await expect(
+    page.getByText('Account traveller · account-browser@example.com'),
+  ).toBeVisible();
+  await expect(page.getByText('Workspace recovery key')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Create account', exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole('button', {
+      name: 'Already have an account? Sign in',
+      exact: true,
+    })
+    .click();
+  await page
+    .getByLabel('Email', { exact: true })
+    .fill('account-browser@example.com');
+  await page.getByLabel('Password', { exact: true }).fill('wrong-password');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page.getByText('Email or password is incorrect.')).toBeVisible();
+  await page
+    .getByLabel('Password', { exact: true })
+    .fill('secure-travel-password-43');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Good plans start here.' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'New trip', exact: true }).click();
+  await page.getByLabel('Trip name').fill('Historic attractions');
+  await page
+    .getByLabel('Destination', { exact: true })
+    .fill('Qutub Minar, Delhi');
+  await page.getByRole('button', { name: 'Find place', exact: true }).click();
+  await page.getByRole('button', { name: /Qutub Minar, Delhi/ }).click();
+  await page
+    .getByRole('button', { name: '＋ Add another stop', exact: true })
+    .click();
+  await page
+    .getByLabel('Destination', { exact: true })
+    .nth(1)
+    .fill('Hawa Mahal, Jaipur');
+  await page
+    .getByRole('button', { name: 'Find place', exact: true })
+    .nth(1)
+    .click();
+  await page.getByRole('button', { name: /Hawa Mahal, Jaipur/ }).click();
+  await page
+    .getByRole('button', { name: 'Save itinerary', exact: true })
+    .click();
+  await expect(
+    page.getByRole('heading', { name: 'Historic attractions', exact: true }),
+  ).toBeVisible();
+  const saved = await page.evaluate(
+    async () => (await (await fetch('/api/trips')).json()).trips[0],
+  );
+  expect(saved.stops[0].location.kind).toBe('landmark');
+  expect(saved.stops[0].location.latitude).toBe(28.524428);
+  expect(saved.stops[1].location.city).toBe('Jaipur');
+  await page.reload();
+  await expect(
+    page.getByRole('heading', { name: 'Historic attractions', exact: true }),
+  ).toBeVisible();
 });

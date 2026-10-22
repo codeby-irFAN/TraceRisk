@@ -154,7 +154,17 @@ HTTP 429 responses include `Retry-After` as seconds. Partial provider failures c
 
 ## Trip workspace API (v5)
 
-`POST /api/workspaces` returns `{workspace,key}`. Keep the key private. All `/api/workspace` and `/api/trips` endpoints require `Authorization: Bearer <key>`. Keys are hashed in SQLite; trips and mutations are scoped to the authenticated workspace.
+The trip API now uses account session cookies. `POST /api/workspaces` and bearer-key authentication are removed. Send `X-TraceRisk-Request: 1` on all account/trip/workspace mutations; cross-origin mutations are rejected. Use cookie-aware requests over HTTPS. Passwords never appear in responses.
+
+| Method / path             | Behaviour                                                                                                |
+| ------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `GET /api/auth/session`   | Current `{user}` or `{user:null}`                                                                        |
+| `POST /api/auth/register` | `{name,email,password}`; password 10–128 characters; sets an HttpOnly, SameSite=Lax cookie               |
+| `POST /api/auth/login`    | `{email,password}`; sets a 14-day session cookie                                                         |
+| `POST /api/auth/logout`   | Revokes current session and clears cookie                                                                |
+| `POST /api/auth/password` | `{currentPassword,newPassword}`; changes password, revokes all sessions and issues a new current session |
+
+Registration and login optionally accept the previous browser's `legacyKey` for automatic ownership migration; it is never accepted as API authentication or returned to the user. Migration requires a valid unclaimed legacy workspace. Each account owns a separate workspace, and unauthorised trip IDs return 404. Email is a sign-in identifier, not verified email ownership; email delivery/password-reset flows are not configured.
 
 | Method / path                 | Behaviour                                                                                           |
 | ----------------------------- | --------------------------------------------------------------------------------------------------- |
@@ -179,4 +189,4 @@ Trip body: `{title,client,origin:null|{query,locationId},stops:[{query,locationI
 
 A snapshot contains `reports` for stops/origin/supported corridor areas, explicit per-report dates, route geometry/status/notes, summary counts and collection time. Reports expose `decision.checks` by information type, personal impact, verification/source support and conflicts. Coverage is not a safety probability. Timeline kinds include `new`, `changed`, `not-observed`, `resolved` and `coverage`; source disappearance alone never means resolution. There are up to 100 timeline events per trip.
 
-Workspace creation is limited to eight per client/hour, authenticated reads to 180 per client/minute, and checks/comparisons to eight per workspace/ten minutes. At most two full trip jobs run per process. Edit/watch/read operations can return 409 while a check is active; check capacity/rate limits return 429. Jobs and rate counters are process-local; saved trips, completed results and shares reside in SQLite.
+Registration/login/password changes share a twelve-attempt limit per client/ten minutes; authenticated reads to 180 per client/minute, and checks/comparisons to eight per workspace/ten minutes. At most two full trip jobs run per process. Edit/watch/read operations can return 409 while a check is active; check capacity/rate limits return 429. Jobs and rate counters are process-local; saved trips, completed results and shares reside in SQLite.

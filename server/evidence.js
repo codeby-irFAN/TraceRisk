@@ -79,15 +79,20 @@ export function placeContext(destination, location) {
   const parts = String(destination)
     .split(',')
     .map((x) => x.trim());
-  const city = location?.name || parts[0];
+  const city = location?.city || location?.name || parts[0];
   const region =
     location?.admin1 ||
     parts.slice(1).find((x) => x.toLowerCase() !== 'india') ||
     '';
   return {
     city,
+    landmark: location?.kind === 'landmark' ? location.name : null,
     region,
-    aliases: [city, ...(ALIASES[normalText(city)] || [])],
+    aliases: [
+      city,
+      ...(location?.kind === 'landmark' ? [location.name] : []),
+      ...(ALIASES[normalText(city)] || []),
+    ],
   };
 }
 export function placeMatch(text, context) {

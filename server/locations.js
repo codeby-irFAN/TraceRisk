@@ -1,3 +1,4 @@
+import { findSpecificPlaces, knownLandmarks } from './places.js';
 import { randomUUID } from 'node:crypto';
 import { OPEN_METEO_GEOCODING, GEOCODING_TIMEOUT_MS } from './config.js';
 import { openMeteoJson } from './open-meteo.js';
@@ -13,7 +14,13 @@ export function normalizeDestination(value) {
 export function locationLabel(place) {
   return [
     ...new Set(
-      [place.name, place.admin2, place.admin1, place.country].filter(Boolean),
+      [
+        place.name,
+        place.city,
+        place.admin2,
+        place.admin1,
+        place.country,
+      ].filter(Boolean),
     ),
   ].join(', ');
 }
@@ -64,6 +71,11 @@ export function createLocationResolver({
 }
 
 export async function findDestinationLocations(destination) {
+  const known = knownLandmarks(destination);
+  if (known.length) return known;
+  // Start landmark lookup concurrently; city geocoding alone cannot find attractions.
+  const specific = findSpecificPlaces(destination).catch(() => []);
+
   const variants = [
     ...new Set(
       [destination.trim(), destination.split(',')[0].trim()].filter(Boolean),
@@ -124,12 +136,20 @@ export async function findDestinationLocations(destination) {
             timezone: item.timezone || '',
           });
       }
-      if (unique.size) return [...unique.values()].slice(0, 8);
+      if (unique.size) {
+        const landmarks = await specific;
+        return [
+          ...landmarks.filter((p) => p.kind === 'landmark'),
+          ...unique.values(),
+        ].slice(0, 8);
+      }
     } catch (error) {
       lastError = error;
     }
   }
 
+  const places = await specific;
+  if (places.length) return places;
   if (lastError) throw lastError;
   return [];
 }

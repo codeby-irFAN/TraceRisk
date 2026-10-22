@@ -44,8 +44,8 @@ The interface uses an ivory, forest-green, and terracotta travel-journal theme w
 
 ## Suggested walkthrough
 
-1. Create a private workspace and save its recovery key from Settings.
-2. Create a trip with an origin, confirmed destination and dates. Add another stop and select the travel mode and relevant needs.
+1. Create an account or sign in. Explain that the saved trips belong to this account.
+2. Create a trip with an origin, confirmed city or landmark (for example Hawa Mahal, Jaipur) and dates. Add another stop and select the travel mode and relevant needs.
 3. Run a check. Show the itinerary and practical departure checks; explain which date windows have forecast coverage.
 4. Open Evidence and follow an original source. Explain the event-date basis, source support and any conflicting report.
 5. Open Route map. Distinguish itinerary markers, supported incident points and unlocated regional findings. Explain when routing is unavailable.
@@ -62,7 +62,7 @@ TraceRisk separates evidence collection from the presence of findings. A zero sc
 
 ## Current limitations
 
-Search may miss new or local-language reporting. Place matching depends on geocoding coverage and user selection. News, extraction, weather, and model access can fail or run out of quota. Rule scores and weather thresholds are heuristics rather than calibrated forecasts. Workspace access uses a private recovery key without email recovery or team roles. Process-local limits/caches do not coordinate multiple server instances. Corridor checks sample areas, not every road segment; train/flight routes and live traffic are unsupported.
+Search may miss new or local-language reporting. Place matching depends on geocoding coverage and user selection. News, extraction, weather, and model access can fail or run out of quota. Rule scores and weather thresholds are heuristics rather than calibrated forecasts. Workspace access uses email/password sign-in; email reset delivery and shared team roles are not configured. Process-local limits/caches do not coordinate multiple server instances. Corridor checks sample areas, not every road segment; train/flight routes and live traffic are unsupported.
 
 ## Future work
 

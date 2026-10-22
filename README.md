@@ -26,7 +26,11 @@ Use this README for the current workflow; the recording is a separate demonstrat
 
 The evidence-grounded trip assistant explains transport, weather, departure checks and recorded changes using saved evidence and source citations. It explicitly identifies missing information. Quick Check still offers its browser notebook, date shortcuts, text export and source filters.
 
-Create a workspace, **save its recovery key from Settings**, then create an itinerary and run a check. The key grants access to that workspace; there is no password/email recovery or team role system. Share links are frozen snapshots, expire after seven days, can be revoked, and omit the client name unless explicitly selected. Anyone holding a share link can read its briefing.
+Create a free account with your name, email and password, then add an itinerary and run a check. Sign in on another device to see the same trips. Passwords are salted and hashed; sign-in uses an HttpOnly session cookie, with no recovery key to copy or store. Existing key-based trips transfer automatically when an account is created in the same browser; signing in to an existing account can also import unclaimed browser trips. Public briefing links expire after seven days, can be revoked, and omit the client name unless selected.
+
+Stops can be cities or attractions such as **Hawa Mahal, Jaipur** or **Qutub Minar, Delhi**. The app preserves landmark coordinates and checks the surrounding city for relevant travel updates; a city report is not automatically a closure at the attraction. A small built-in landmark directory works without a geocoding key; broader searches use Photon/OpenStreetMap and city geocoding. Opening hours and ticket prices are only answered when retrieved evidence supports them.
+
+The main results use plain-language summaries. Source methodology and route limitations stay available in expandable details. Comparisons show actual weather and travel updates, and omit missing driving times rather than displaying an invalid estimate. The map uses an attributed CARTO background and keeps route/stop overlays available if tiles fail to load.
 
 Trip Watch alerts appear **inside the workspace**, including changes collected while the browser was closed. There is no email, SMS or operating-system push delivery. The server must remain running with persistent storage for reliable monitoring.
 
@@ -39,6 +43,8 @@ Weather/flood forecasts, modelled US AQI and nearby orange/red GDACS alerts supp
 The visual theme uses flat ivory, forest green, and terracotta surfaces, with a generated map-pin and route emblem shared by the header, footer and favicon. The frontend uses React 19, Vite 7, Lucide icons, and CSS transitions; the backend uses Express 5 on Node.js.
 
 ## Trip workspace preview
+
+![Create a TraceRisk account](graphics/screenshots/account-desktop.png)
 
 Illustrative fixture data from browser tests; these screenshots do not show live travel conditions.
 
@@ -103,7 +109,7 @@ Edit `.env` before starting:
 
 Replace required placeholders with valid credentials. Leave unused optional credentials blank; known placeholder values are treated as missing. Configuration flags still do not validate real credentials. Get keys through [TinyFish](https://agent.tinyfish.ai/), [Groq Console](https://console.groq.com/keys). Keep real credentials in local or deployment settings, never in Git.
 
-Open-Meteo geocoding is needed to confirm a destination. Its public non-commercial geocoding, forecast, and flood endpoints do not require an API key. The optional external proxy is described in the [deployment guide](docs/DEPLOYMENT.md#optional-cloudflare-worker-proxy).
+City lookup uses Open-Meteo geocoding; landmark lookup also uses a small bundled directory and Photon/OpenStreetMap. Its public non-commercial geocoding, forecast, and flood endpoints do not require an API key. The optional external proxy is described in the [deployment guide](docs/DEPLOYMENT.md#optional-cloudflare-worker-proxy).
 
 ```sh
 npm run dev

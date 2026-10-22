@@ -41,6 +41,8 @@ export function validateTrip(body, resolver, existing = null) {
   };
   const stops = body.stops.map((s) => {
     if (
+      !s ||
+      typeof s !== 'object' ||
       !isDate(s.startDate) ||
       !isDate(s.endDate) ||
       s.startDate > s.endDate ||
@@ -209,6 +211,14 @@ export function createTripService({
         throw error;
       }
     }
+    result.placeContext =
+      target.location.kind === 'landmark'
+        ? {
+            landmark: target.location.name,
+            city: target.location.city,
+            note: `Local updates cover ${target.location.city || 'the surrounding area'}. Check the attraction directly for entry times and site-specific closures.`,
+          }
+        : null;
     result.issues = (result.issues || []).map((issue) => ({
       ...issue,
       personalImpact: impactFor(issue, preferences),

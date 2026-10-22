@@ -926,3 +926,70 @@
     background: white;
   }
 }
+.auth-welcome {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 65px;
+  align-items: start;
+  padding-top: 45px;
+  max-width: 1150px;
+}
+.auth-welcome h1 {
+  font-size: clamp(40px, 5vw, 65px);
+}
+.auth-welcome > div > p {
+  max-width: 420px;
+  color: var(--muted);
+  font-size: 15px;
+}
+.auth-benefits {
+  margin-top: 45px;
+}
+.auth-benefits p {
+  margin: 18px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.auth-card {
+  padding: 28px;
+}
+.auth-card form > .primary {
+  width: 100%;
+  margin: 22px 0 12px;
+}
+.auth-card .auth-switch {
+  border: 0;
+  padding: 8px 0;
+  font-size: 12px;
+  background: transparent;
+}
+.trip-workspace .auth-card p {
+  font-size: 13px;
+}
+.route-map {
+  background-image:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px) !important;
+  background-size: 32px 32px !important;
+}
+@media (max-width: 1050px) {
+  .auth-welcome {
+    gap: 25px;
+  }
+}
+@media (max-width: 720px) {
+  .auth-welcome {
+    grid-template-columns: 1fr;
+    padding-top: 15px;
+    gap: 25px;
+  }
+  .auth-benefits {
+    display: none;
+  }
+  .auth-card {
+    padding: 24px 18px;
+  }
+  .auth-welcome h1 {
+    font-size: 44px;
+  }
+}

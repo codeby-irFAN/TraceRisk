@@ -244,6 +244,24 @@ test('trip API scopes private data and shares omit client names unless requested
   const a = store.createWorkspace(),
     b = store.createWorkspace();
   const trip = store.create(a.workspace.id, config);
+  const accountA = store.accounts.create({
+    id: 'account-a',
+    email: 'a@example.com',
+    name: 'A',
+    passwordHash: 'unused',
+    workspace: a.workspace.id,
+  });
+  const accountB = store.accounts.create({
+    id: 'account-b',
+    email: 'b@example.com',
+    name: 'B',
+    passwordHash: 'unused',
+    workspace: b.workspace.id,
+  });
+  const cookies = new Map([
+    [a.key, store.accounts.session(accountA.id)],
+    [b.key, store.accounts.session(accountB.id)],
+  ]);
   const request = (
     path,
     key,
@@ -253,7 +271,8 @@ test('trip API scopes private data and shares omit client names unless requested
     fetch(base + path, {
       method,
       headers: {
-        ...(key ? { Authorization: `Bearer ${key}` } : {}),
+        ...(key ? { Cookie: `tracerisk_session=${cookies.get(key)}` } : {}),
+        'X-TraceRisk-Request': '1',
         'Content-Type': 'application/json',
       },
       body: body === undefined ? undefined : JSON.stringify(body),

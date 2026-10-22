@@ -17,7 +17,10 @@ function Place({ value, onChange, label }) {
         `/locations?destination=${encodeURIComponent(value.query)}`,
       );
       setOptions(data.locations || []);
-      if (!data.locations?.length) setError('Try a city and state name.');
+      if (!data.locations?.length)
+        setError(
+          'Try the landmark name and city, for example Hawa Mahal, Jaipur.',
+        );
     } catch (e) {
       setError(e.message);
     } finally {
@@ -42,7 +45,7 @@ function Place({ value, onChange, label }) {
               });
               setOptions([]);
             }}
-            placeholder="City, state"
+            placeholder="City or landmark, e.g. Hawa Mahal, Jaipur"
           />
           <button
             type="button"
@@ -54,7 +57,9 @@ function Place({ value, onChange, label }) {
         </div>
       </label>
       {(value.locationId || value.savedId) && (
-        <small className="confirmed">✓ Place confirmed</small>
+        <small className="confirmed">
+          ✓ {value.confirmedLabel || 'Place confirmed'}
+        </small>
       )}
       {options.length > 0 && (
         <div className="place-options">
@@ -63,7 +68,12 @@ function Place({ value, onChange, label }) {
               type="button"
               key={o.id}
               onClick={() => {
-                onChange({ ...value, query: value.query, locationId: o.id });
+                onChange({
+                  ...value,
+                  query: value.query,
+                  locationId: o.id,
+                  confirmedLabel: place(o),
+                });
                 setOptions([]);
               }}
             >

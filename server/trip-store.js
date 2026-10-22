@@ -1,3 +1,4 @@
+import { createAccountStore } from './auth.js';
 import { DatabaseSync } from 'node:sqlite';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { mkdirSync, chmodSync } from 'node:fs';
@@ -35,6 +36,7 @@ export function createTripStore({
     CREATE INDEX IF NOT EXISTS trips_due ON trips(next_check, watch_until);
     CREATE TABLE IF NOT EXISTS shares (key_hash TEXT PRIMARY KEY, trip TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE, workspace TEXT NOT NULL, payload TEXT NOT NULL, expires INTEGER NOT NULL);
   `);
+  const accounts = createAccountStore(db, now);
   const get = (workspace, id) =>
     decode(
       db
@@ -43,6 +45,13 @@ export function createTripStore({
       now,
     );
   return {
+    accounts,
+    workspace: (id) => {
+      const row = db
+        .prepare('SELECT payload FROM workspaces WHERE id=?')
+        .get(id);
+      return row ? JSON.parse(row.payload) : null;
+    },
     persistent: filename !== ':memory:',
     close: () => db.close(),
     createWorkspace() {
@@ -73,6 +82,32 @@ export function createTripStore({
         .prepare('SELECT payload FROM workspaces WHERE key_hash=?')
         .get(digest(key));
       return row ? JSON.parse(row.payload) : null;
+    },
+    importLegacy(key, target) {
+      const old = this.authenticate(key);
+      if (!old || old.id === target || accounts.workspaceOwned(old.id))
+        return false;
+      const count = db
+        .prepare('SELECT count(*) AS n FROM trips WHERE workspace IN (?,?)')
+        .get(old.id, target).n;
+      if (count > 50)
+        throw tripError(
+          'There are too many saved trips to combine automatically. Use the original account to manage them.',
+          409,
+        );
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        db.prepare('DELETE FROM shares WHERE workspace=?').run(old.id);
+        db.prepare(
+          'UPDATE trips SET workspace=?,revision=revision+1,lock_until=0 WHERE workspace=?',
+        ).run(target, old.id);
+        db.prepare('DELETE FROM workspaces WHERE id=?').run(old.id);
+        db.exec('COMMIT');
+        return true;
+      } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
+      }
     },
     updateWorkspace(workspace, patch) {
       const next = { ...workspace, ...patch, id: workspace.id };

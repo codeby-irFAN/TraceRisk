@@ -1,3 +1,4 @@
+import { accountFor, requireSameOrigin } from './auth.js';
 import express from 'express';
 import { createRateLimiter } from './scan-manager.js';
 import { cleanText } from './utils.js';
@@ -23,13 +24,8 @@ const brief = (trip) => ({
 });
 export function createTripRouter({ store, service, locationResolver }) {
   const router = express.Router();
-  const createLimit = createRateLimiter({ limit: 8, windowMs: 3600000 });
   const readLimit = createRateLimiter({ limit: 180, windowMs: 60000 });
   const checkLimit = createRateLimiter({ limit: 8, windowMs: 600000 });
-  router.post('/workspaces', (req, res) => {
-    createLimit.consume(req.ip);
-    res.status(201).json(store.createWorkspace());
-  });
   router.get('/shared/:key', (req, res) => {
     readLimit.consume(req.ip);
     const snapshot = store.readShare(req.params.key);
@@ -41,12 +37,13 @@ export function createTripRouter({ store, service, locationResolver }) {
   });
   router.use(['/workspace', '/trips'], (req, res, next) => {
     readLimit.consume(req.ip);
-    const match = req.get('authorization')?.match(/^Bearer (trw_[\w-]{43})$/);
-    const workspace = match && store.authenticate(match[1]);
+    requireSameOrigin(req);
+    const user = accountFor(req, store);
+    const workspace = user && store.workspace(user.workspaceId);
     if (!workspace)
       return res.status(401).json({
-        error: 'Open or restore your private workspace first.',
-        code: 'WORKSPACE_REQUIRED',
+        error: 'Please sign in to open your trips.',
+        code: 'SIGN_IN_REQUIRED',
       });
     req.workspace = workspace;
     next();

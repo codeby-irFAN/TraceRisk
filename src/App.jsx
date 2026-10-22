@@ -8,7 +8,7 @@ function Shared({ token }) {
   const [data, setData] = useState(null),
     [error, setError] = useState('');
   useEffect(() => {
-    api(`/shared/${encodeURIComponent(token)}`, undefined, 'GET', null)
+    api(`/shared/${encodeURIComponent(token)}`, undefined, 'GET')
       .then(setData)
       .catch((e) => setError(e.message));
   }, [token]);
