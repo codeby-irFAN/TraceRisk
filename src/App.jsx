@@ -169,7 +169,7 @@ export default function App() {
     const timeout = window.setTimeout(
       () =>
         controller.abort(new DOMException('Request timed out', 'TimeoutError')),
-      108_000,
+      25_000,
     );
     setError('');
     setNotice('');
@@ -530,7 +530,7 @@ export default function App() {
                   <p>
                     {phase === 'location'
                       ? 'Looking up cities and states so your briefing covers the right place.'
-                      : `Reviewing sources and forecasts for ${selectedLocation?.label || destination}. This can take up to 100 seconds.`}
+                      : `Reviewing sources and forecasts for ${selectedLocation?.label || destination}. Allow about 20 seconds. Any gaps in coverage will be shown in your briefing.`}
                   </p>
                 </div>
                 <span className="elapsed-time">

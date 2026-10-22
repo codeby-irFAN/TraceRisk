@@ -48,6 +48,7 @@ test('API validation and a complete scan with fixture providers', async (t) => {
         { ...trip, startDate: '2026-02-30' },
         { ...trip, startDate: '2026-10-22junk' },
         { ...trip, endDate: '2026-10-21' },
+        { ...trip, endDate: '2027-02-01' },
       ]) {
         const response = await post(body);
         assert.equal(response.status, 400);
@@ -60,23 +61,28 @@ test('API validation and a complete scan with fixture providers', async (t) => {
       });
       assert.equal(malformed.status, 400);
       assert.match((await malformed.json()).error, /valid JSON/);
+      const oversized = await post({ ...trip, padding: 'x'.repeat(33_000) });
+      assert.equal(oversized.status, 413);
       const missing = await nativeFetch(`${base}/api/missing`);
       assert.equal(missing.status, 404);
       assert.match((await missing.json()).error, /not found/);
     },
   );
 
-  await t.test('reports the missing scan credential clearly', async () => {
-    const previous = process.env.TINYFISH_API_KEY;
-    delete process.env.TINYFISH_API_KEY;
-    try {
-      const response = await post(trip);
-      assert.equal(response.status, 503);
-      assert.equal((await response.json()).code, 'MISSING_TINYFISH_KEY');
-    } finally {
-      if (previous !== undefined) process.env.TINYFISH_API_KEY = previous;
-    }
-  });
+  await t.test(
+    'still requires a confirmed place when the search credential is missing',
+    async () => {
+      const previous = process.env.TINYFISH_API_KEY;
+      delete process.env.TINYFISH_API_KEY;
+      try {
+        const response = await post(trip);
+        assert.equal(response.status, 400);
+        assert.equal((await response.json()).code, 'LOCATION_REQUIRED');
+      } finally {
+        if (previous !== undefined) process.env.TINYFISH_API_KEY = previous;
+      }
+    },
+  );
 
   await t.test(
     'collects evidence, derives trip-date signals, and caches the scan',
@@ -154,11 +160,16 @@ test('API validation and a complete scan with fixture providers', async (t) => {
         const response = await post(trip);
         assert.equal(response.status, 200);
         const scan = await response.json();
+        assert.equal(response.headers.get('cache-control'), 'no-store');
+        assert.equal(response.headers.get('x-request-id'), scan.requestId);
+        assert.match(response.headers.get('server-timing'), /scan;dur=/);
         assert.equal(scan.analysisMode, 'rules');
         assert.equal(scan.searchLaneStats.length, 8);
-        assert.equal(scan.pagesFetched, 8);
+        assert.equal(scan.pagesFetched, 3);
         assert.equal(scan.sourceHealth.searchGroupsSucceeded, 8);
-        assert.equal(scan.coverageStatus, 'adequate');
+        assert.equal(scan.coverageStatus, 'limited');
+        assert.equal(scan.sourceHealth.publisherCount, 1);
+        assert.ok(scan.highlights.length > 0);
         assert.equal(scan.hasIssues, true);
         assert.ok(
           scan.issues.some(
@@ -182,6 +193,18 @@ test('API validation and a complete scan with fixture providers', async (t) => {
         const cached = await post(trip);
         assert.equal((await cached.json()).cached, true);
         assert.equal(externalCalls, before);
+        // A distinct scan with no search credential must still return available weather.
+        delete process.env.TINYFISH_API_KEY;
+        const searchesBefore = searchCalls;
+        const weatherOnly = await post({ ...trip, endDate: '2026-10-24' });
+        assert.equal(weatherOnly.status, 200);
+        const partial = await weatherOnly.json();
+        assert.equal(partial.resultStatus, 'partial');
+        assert.equal(partial.coverageStatus, 'inconclusive');
+        assert.equal(partial.weather.forecastDaysMatched, 2);
+        assert.ok(partial.nextSteps.length > 0);
+        assert.equal(partial.sourceHealth.searchGroupsSucceeded, 0);
+        assert.equal(searchCalls, searchesBefore);
       } finally {
         mock.mock.restore();
         for (const [key, value] of Object.entries(previous)) {

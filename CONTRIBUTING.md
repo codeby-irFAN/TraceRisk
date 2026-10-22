@@ -81,3 +81,7 @@ For screenshots, use known illustrative or fixture data and label it accordingly
 ## Pull requests
 
 Describe the concrete problem and resulting behavior, reference any relevant issue, and list the checks actually run. Include responsive/light/dark screenshots for visual changes when helpful. Keep passed, failed, skipped, fixture-based, and live checks distinct. Note changed configuration requirements and any remaining limitations so reviewers can reproduce the result.
+
+## Live retrieval checks
+
+`npm run benchmark:live -- --live` runs explicit, quota-consuming provider checks outside CI. It records lookup/scan latency, coverage and sources under ignored `artifacts/benchmarks/`. Review the actual locations, publication dates and quotations as well as latency. A passing synthetic regression suite is not a measured real-world accuracy rate. See [evaluation](docs/EVALUATION.md).

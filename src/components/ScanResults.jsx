@@ -19,6 +19,7 @@ import {
 import IssueCard from './IssueCard.jsx';
 import WeatherPanel from './WeatherPanel.jsx';
 import EvidencePanel from './EvidencePanel.jsx';
+import TripContext from './TripContext.jsx';
 
 const categories = [
   ['all', 'All signals'],
@@ -160,7 +161,11 @@ export default function ScanResults({ result, onNewScan }) {
             <>
               <ShieldAlert size={30} strokeWidth={1.3} />
               <span className="risk-level">
-                {inconclusive ? 'Unable to verify' : 'No signals surfaced'}
+                {result.resultStatus === 'unavailable'
+                  ? 'Live sources unavailable'
+                  : inconclusive
+                    ? 'Coverage incomplete'
+                    : 'Trip information collected'}
               </span>
             </>
           )}
@@ -170,9 +175,7 @@ export default function ScanResults({ result, onNewScan }) {
           <h3>
             {result.hasIssues
               ? 'Signals to pay attention to.'
-              : inconclusive
-                ? 'Risk status could not be verified.'
-                : 'No issues crossed the screening threshold.'}
+              : 'Your briefing and next checks.'}
           </h3>
           <p>{result.briefing}</p>
           {!result.hasIssues && (
@@ -182,8 +185,8 @@ export default function ScanResults({ result, onNewScan }) {
       </div>
       {result.analysisMode === 'rules' && (
         <p className="rules-note">
-          <TriangleAlert size={15} /> AI review was unavailable for this scan.
-          Rules-based findings are leads to verify with the cited sources.
+          <TriangleAlert size={15} /> Sources were checked automatically without
+          AI review. Confirm the current status of cited reports before travel.
         </p>
       )}
       {issues.length > 0 && (
@@ -256,6 +259,7 @@ export default function ScanResults({ result, onNewScan }) {
         </section>
       )}
       {result.weather && <WeatherPanel weather={result.weather} />}
+      <TripContext result={result} />
       <EvidencePanel result={result} />
       <footer className="results-footer">
         <span>

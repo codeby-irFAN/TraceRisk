@@ -85,6 +85,68 @@ test.beforeEach(async ({ page }) => {
   );
 });
 
+test('a sparse scan still provides useful source leads and next checks without alerts', async ({
+  page,
+}) => {
+  await page.route('**/api/analyze', (route) =>
+    route.fulfill({
+      json: {
+        ...fixture,
+        hasIssues: false,
+        issues: [],
+        issueCount: 0,
+        riskScore: 0,
+        resultStatus: 'partial',
+        riskLevel: 'No supported disruption identified',
+        highlights: [
+          {
+            title: 'Local information',
+            detail: 'One source needs a current-status check.',
+          },
+        ],
+        leads: [
+          {
+            id: 'lead-S1',
+            title: 'Local travel notice',
+            sourceIds: ['S1'],
+            excerpt: 'Check the district notice before travelling.',
+            status: 'Source to review',
+            reason: 'Only a search snippet was available.',
+          },
+        ],
+        nextSteps: [
+          {
+            title: 'Check official weather warnings',
+            url: 'https://mausam.imd.gov.in/',
+            detail: 'Review IMD warnings.',
+          },
+        ],
+      },
+    }),
+  );
+  await chooseDestination(page);
+  await page.getByRole('button', { name: 'Check my trip' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Your briefing and next checks.' }),
+  ).toBeVisible();
+  await expect(page.locator('.trip-lead').getByRole('link')).toHaveAttribute(
+    'href',
+    fixture.sources[0].url,
+  );
+  await expect(
+    page.getByText('Only a search snippet was available.', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('link', { name: /Check official weather warnings/ }),
+  ).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+});
+
 test('confirmed location, partial weather and source quality remain clear on desktop and mobile', async ({
   page,
 }) => {

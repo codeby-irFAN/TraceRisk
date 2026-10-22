@@ -1,317 +1,350 @@
-import { SEARCH_CONCURRENCY, MAX_WEB_SOURCES } from './config.js';
+import { performance } from 'node:perf_hooks';
+import {
+  MAX_WEB_SOURCES,
+  SCAN_STAGES,
+  REQUEST_BUDGET_MS,
+  ENGINE_VERSION,
+} from './config.js';
 import {
   buildQueries,
   searchTinyFish,
   rankAndSelectCandidates,
-  sourceRelevanceScore,
   fetchTinyFish,
 } from './search.js';
 import { fetchOpenMeteoHazards } from './weather.js';
 import {
   scoreWithAI,
-  ruleBasedAssessment,
   mergeWeatherIssues,
   computeOverallScore,
   riskLevel,
-  buildFallbackBriefing,
 } from './assessment.js';
 import {
-  settleWithConcurrency,
-  cleanText,
-  normalizeUrl,
-  safeDomain,
-  sourceTrust,
-  summarizeForecastCoverage,
-} from './utils.js';
-export async function analyzeTrip({
-  destination,
-  startDate,
-  endDate,
-  location,
-}) {
-  const queryGroups = buildQueries(destination, startDate, endDate);
-  const searchStartedAt = Date.now();
+  publicSource,
+  placeContext,
+  deterministicClaims,
+  verifyClaims,
+  buildLeads,
+  publisherKey,
+} from './evidence.js';
+import { withRequestBudget, currentSignal } from './http.js';
+import { cleanText, summarizeForecastCoverage } from './utils.js';
 
-  const [searchAttempts, weatherBundle] = await Promise.all([
-    settleWithConcurrency(queryGroups, SEARCH_CONCURRENCY, searchTinyFish),
-    fetchOpenMeteoHazards(destination, startDate, endDate, location).catch(
-      (error) => {
-        console.warn(
-          '[TraceRisk] Open-Meteo collection failed:',
-          error?.message || error,
-        );
-        return {
-          sources: [],
-          issues: [],
-          meta: {
-            provider: 'Open-Meteo',
-            geocoded: false,
-            forecastStatus: 'unavailable',
-            floodStatus: 'unavailable',
-            hasDateRelevantData: false,
-            location: null,
-            ...summarizeForecastCoverage(startDate, endDate, []),
-            warnings: [
-              cleanText(error?.message || 'Weather API unavailable', 240),
-            ],
-          },
-        };
-      },
-    ),
-  ]);
-
-  const searchResults = searchAttempts.flatMap((attempt, index) => {
-    if (attempt.status === 'fulfilled') return attempt.value;
-    console.warn(
-      `[TraceRisk] Search group ${queryGroups[index].id} failed:`,
-      attempt.reason?.message || attempt.reason,
-    );
-    return [];
-  });
-
-  const searchMs = Date.now() - searchStartedAt;
-  console.log(
-    `[TraceRisk] TinyFish returned ${searchResults.length} total search results across ${queryGroups.length} query lanes.`,
-  );
-  console.log(
-    `[TraceRisk] Open-Meteo: forecast=${weatherBundle.meta.forecastStatus}, flood=${weatherBundle.meta.floodStatus}, signals=${weatherBundle.issues.length}.`,
-  );
-
-  const candidates = rankAndSelectCandidates(
-    searchResults,
-    destination,
-    MAX_WEB_SOURCES,
-  );
-
-  if (!candidates.length && !weatherBundle.sources.length) {
-    throw new Error(
-      'TraceRisk could not collect usable TinyFish results or date-relevant weather data. Retry shortly; a failed data collection does not mean the destination is safe.',
-    );
-  }
-
-  const fetchStartedAt = Date.now();
-  const fetchOutcome = candidates.length
-    ? await fetchTinyFish(candidates)
-    : { results: new Map(), errors: [], requestError: null };
-  const fetchMs = Date.now() - fetchStartedAt;
-
-  const webSources = candidates.map((candidate, index) => {
-    const extracted = fetchOutcome.results.get(normalizeUrl(candidate.url));
-    const pageText = cleanText(extracted?.text || '', 4_500);
-    return {
-      id: `S${index + 1}`,
-      title: cleanText(
-        extracted?.title ||
-          candidate.title ||
-          candidate.site_name ||
-          'Source result',
-        220,
-      ),
-      url: candidate.url,
-      domain: safeDomain(candidate.url),
-      snippet: cleanText(candidate.snippet || '', 900),
-      text:
-        pageText ||
-        cleanText(candidate.snippet || candidate.title || '', 4_500),
-      fetched: Boolean(pageText),
-      group: candidate.group,
-      publishedAt: cleanText(
-        candidate.date ||
-          candidate.publishedAt ||
-          candidate.published_at ||
-          candidate.published_date ||
-          candidate.publication_date ||
-          '',
-        60,
-      ),
-      trust: sourceTrust(candidate.url),
-    };
-  });
-
-  const weatherSources = weatherBundle.sources.map((source) => ({
-    ...source,
-    fetched: true,
-    group: 'weather-api',
-  }));
-  const sources = [...webSources, ...weatherSources];
-  const pagesFetched = webSources.filter((source) => source.fetched).length;
-  const sourcesWithRelevantEvidence = webSources.filter(
-    (source) => sourceRelevanceScore(source, destination) >= 4,
-  ).length;
-  console.log(
-    `[TraceRisk] Source quality: ${sourcesWithRelevantEvidence}/${webSources.length} web sources look destination/topic-relevant; ${pagesFetched} full pages fetched; ${weatherSources.length} weather API sources added.`,
-  );
-
-  const noFullPagesWithoutWeather =
-    pagesFetched === 0 && !weatherBundle.meta.hasDateRelevantData;
-  if (pagesFetched === 0) {
-    console.warn(
-      `[TraceRisk] No full webpages were fetched. Continuing with search snippets${weatherBundle.meta.hasDateRelevantData ? ' plus date-relevant weather data' : ''}; scan coverage will be limited or inconclusive.`,
-    );
-  }
-
-  const succeededLanes = searchAttempts.filter(
-    (attempt) => attempt.status === 'fulfilled',
-  ).length;
-  const laneStats = searchAttempts.map((attempt, index) => ({
-    id: queryGroups[index].id,
-    label: queryGroups[index].label,
-    type: queryGroups[index].domainType,
-    searchMode:
-      attempt.status === 'fulfilled' &&
-      attempt.value.some((item) => item.searchMode === 'broad-fallback')
-        ? 'broad-fallback'
-        : 'targeted',
-    recencyMinutes: queryGroups[index].recencyMinutes || null,
-    succeeded: attempt.status === 'fulfilled',
-    resultCount: attempt.status === 'fulfilled' ? attempt.value.length : 0,
-    selectedCount: candidates.filter(
-      (source) => source.group === queryGroups[index].id,
-    ).length,
-    error:
-      attempt.status === 'rejected'
-        ? cleanText(attempt.reason?.message || 'search failed', 180)
-        : null,
-  }));
-
-  const noUsefulWebEvidence =
-    webSources.length === 0 ||
-    sourcesWithRelevantEvidence === 0 ||
-    succeededLanes < 4;
-
-  const coverageStatus = noUsefulWebEvidence
-    ? 'inconclusive'
-    : noFullPagesWithoutWeather || sourcesWithRelevantEvidence < 2
-      ? weatherBundle.meta.hasDateRelevantData
-        ? 'limited'
-        : 'inconclusive'
-      : pagesFetched >= Math.min(6, webSources.length) && succeededLanes >= 6
-        ? 'adequate'
-        : 'limited';
-
-  const llmStartedAt = Date.now();
-  let llmResult = null;
-  let llmError = null;
-
-  try {
-    llmResult = await scoreWithAI({ destination, startDate, endDate, sources });
-    if (llmResult?._fallbackReason) {
-      console.warn(
-        `[TraceRisk] AI provider sequence: ${llmResult._fallbackReason}`,
-      );
-    }
-  } catch (error) {
-    llmError = cleanText(error?.message || 'Unknown AI assessment error', 360);
-    console.warn(
-      '[TraceRisk] Gemini/Groq assessment unavailable; falling back to rules:',
-      llmError,
-    );
-  }
-
-  const assessmentMs = Date.now() - llmStartedAt;
-  const analysisMode = llmResult ? 'llm' : 'rules';
-  const assessed =
-    llmResult ||
-    ruleBasedAssessment({ destination, startDate, endDate, sources });
-
-  const issues = mergeWeatherIssues(
-    assessed.issues,
-    weatherBundle.issues,
-    sources,
-  );
-  const riskScore = computeOverallScore(issues);
-  const hasIssues = issues.length > 0;
-
-  let briefing = hasIssues
-    ? cleanText(
-        assessed.briefing || buildFallbackBriefing(destination, issues),
-        1_000,
-      )
-    : cleanText(
-        assessed.briefing ||
-          `No material, destination-specific disruption was identified in the sources reviewed for ${destination} between ${startDate} and ${endDate}. This is not a guarantee of safety.`,
-        1_000,
-      );
-
-  if (coverageStatus === 'inconclusive') {
-    briefing = `INCONCLUSIVE SOURCE COVERAGE: only ${sourcesWithRelevantEvidence} web source(s) looked relevant to ${destination} and ${succeededLanes}/${queryGroups.length} search lanes succeeded; the scan cannot confidently rule out other current disruptions for ${startDate} to ${endDate}. ${briefing}`;
-  } else if (coverageStatus === 'limited') {
-    briefing = `LIMITED SOURCE COVERAGE: ${pagesFetched} web page(s) were extracted and ${weatherSources.length} weather/flood API source(s) were available. ${briefing} Verify important conditions with official sources before travel.`;
-  }
-
-  if (weatherBundle.meta.forecastCoverage === 'partial') {
-    briefing = `PARTIAL WEATHER COVERAGE: daily forecasts cover ${weatherBundle.meta.forecastDaysMatched} of ${weatherBundle.meta.tripDays} trip days. ${briefing}`;
-  }
-  if (weatherBundle.meta.forecastStatus === 'outside_forecast_window') {
-    briefing = `WEATHER FORECAST LIMITATION: Open-Meteo's standard forecast did not cover the selected travel dates. ${briefing}`;
-  } else if (weatherBundle.meta.forecastStatus === 'unavailable') {
-    briefing = `WEATHER API UNAVAILABLE: no Open-Meteo daily forecast was retrieved for this scan. ${briefing}`;
-  }
-
-  if (weatherBundle.meta.warnings?.length) {
-    briefing = `${briefing} Weather-data note: ${weatherBundle.meta.warnings.join('; ')}.`;
-  }
-  if (analysisMode === 'rules') {
-    briefing = `RULE-BASED ASSESSMENT (not AI-verified): ${briefing}`;
-  }
-
+function emptyWeather(trip, error) {
   return {
-    destination,
-    startDate,
-    endDate,
-    riskScore,
-    riskLevel: hasIssues
-      ? riskLevel(riskScore)
-      : coverageStatus === 'inconclusive'
-        ? 'Unable to verify'
-        : 'No material issues found in reviewed sources',
-    hasIssues,
-    coverageStatus,
-    relevantSources: sourcesWithRelevantEvidence,
-    searchLaneStats: laneStats,
-    issueCount: issues.length,
-    issues,
-    sources: sources.map((source) => ({
-      id: source.id,
-      title: source.title,
-      url: source.url,
-      domain: source.domain,
-      trust: source.trust,
-      fetched: source.fetched,
-      publishedAt: source.publishedAt || '',
-      group: source.group,
-      preview: cleanText(source.text || source.snippet || '', 480),
-    })),
-    briefing,
-    searchResultsReturned: searchResults.length,
-    sourcesChecked: webSources.length,
-    selectedWebSources: candidates.length,
-    pagesFetched,
-    weatherSourcesChecked: weatherSources.length,
-    weather: weatherBundle.meta,
-    searchMs,
-    fetchMs,
-    assessmentMs,
-    analysisMode,
-    model: llmResult
-      ? `${llmResult._providerUsed || 'AI'} · ${llmResult._modelUsed || ''}`.trim()
-      : 'rules fallback',
-    providerUsed: llmResult?._providerUsed || 'Rules',
-    providerFallbackReason: llmResult?._fallbackReason || null,
-    sourceHealth: {
-      searchGroupsSucceeded: succeededLanes,
-      searchGroupsTried: queryGroups.length,
-      selectedWebSources: candidates.length,
-      relevantWebSources: sourcesWithRelevantEvidence,
-      searchLanes: laneStats,
-      pagesFetched,
-      fetchErrorCount: fetchOutcome.errors.length,
-      fetchRequestError: fetchOutcome.requestError,
-      llmError,
-      llmFallbackReason: llmResult?._fallbackReason || null,
-      weatherApi: weatherBundle.meta,
+    sources: [],
+    issues: [],
+    meta: {
+      provider: 'Open-Meteo',
+      geocoded: Boolean(trip.location),
+      location: trip.location || null,
+      forecastStatus: 'unavailable',
+      floodStatus: 'unavailable',
+      dailyForecast: [],
+      riverFlow: [],
+      hasDateRelevantData: false,
+      ...summarizeForecastCoverage(trip.startDate, trip.endDate, []),
+      warnings: [error || 'Weather data is unavailable.'],
     },
-    disclaimer:
-      'Weather forecast signals are model-derived, not official warnings. TraceRisk is an experimental travel-awareness tool, not an official safety rating. Confirm important information with local authorities and transport operators.',
   };
 }
+function weatherSummary(weather) {
+  const rows = weather.dailyForecast || [];
+  const temps = rows
+    .flatMap((r) => [r.minC, r.maxC])
+    .filter((v) => typeof v === 'number' && Number.isFinite(v));
+  return rows.length
+    ? `${weather.forecastDaysMatched} of ${weather.tripDays} trip days have a forecast${temps.length ? `; temperatures range from ${Math.min(...temps).toFixed(0)}°C to ${Math.max(...temps).toFixed(0)}°C` : ''}.`
+    : 'Daily forecasts do not cover the selected trip yet, or the provider is unavailable. Recheck closer to departure.';
+}
+
+export function createAnalyzer({
+  search = searchTinyFish,
+  extract = fetchTinyFish,
+  weather = fetchOpenMeteoHazards,
+  assess = scoreWithAI,
+  stages = SCAN_STAGES,
+  now = Date.now,
+} = {}) {
+  return async (trip) =>
+    withRequestBudget(
+      async () => {
+        const started = performance.now(),
+          collectedAt = now();
+        const context = placeContext(trip.destination, trip.location);
+        const parent = currentSignal();
+        const timings = {};
+        const stage = async (name, ms, task) => {
+          const start = performance.now();
+          try {
+            const value = await withRequestBudget(
+              task,
+              ms,
+              `${name} exceeded its stage budget.`,
+            );
+            timings[name] = {
+              status: 'complete',
+              durationMs: Math.round(performance.now() - start),
+            };
+            return { status: 'fulfilled', value };
+          } catch (error) {
+            parent?.throwIfAborted();
+            timings[name] = {
+              status: error.name === 'TimeoutError' ? 'timeout' : 'failed',
+              durationMs: Math.round(performance.now() - start),
+            };
+            return { status: 'rejected', reason: error };
+          }
+        };
+
+        // Weather never blocks search or extraction. Each lane and batch is bounded.
+        const weatherPromise = stage('weather', stages.weather, () =>
+          weather(
+            trip.destination,
+            trip.startDate,
+            trip.endDate,
+            trip.location,
+          ),
+        );
+        weatherPromise.catch(() => {});
+        const groups = buildQueries(
+          trip.destination,
+          trip.startDate,
+          trip.endDate,
+          trip.location,
+        );
+        const searchStart = performance.now();
+        const searches = await Promise.all(
+          groups.map((group) =>
+            stage(`search:${group.id}`, stages.search, () => search(group)),
+          ),
+        );
+        const searchMs = Math.round(performance.now() - searchStart);
+        const rows = searches.flatMap((r) =>
+          r.status === 'fulfilled' && Array.isArray(r.value) ? r.value : [],
+        );
+        const candidates = rankAndSelectCandidates(
+          rows,
+          trip.destination,
+          MAX_WEB_SOURCES,
+          trip.location,
+          collectedAt,
+        );
+        const extraction = candidates.length
+          ? await stage('extraction', stages.extraction, () =>
+              extract(candidates),
+            )
+          : {
+              status: 'fulfilled',
+              value: { results: new Map(), errors: [], requestError: null },
+            };
+        const fetched =
+          extraction.status === 'fulfilled'
+            ? extraction.value
+            : {
+                results: new Map(),
+                errors: candidates.map((s) => ({
+                  url: s.url,
+                  error: 'Extraction did not finish in time.',
+                })),
+                requestError: cleanText(extraction.reason.message, 180),
+              };
+        const web = candidates.map((s, i) =>
+          publicSource(s, fetched.results.get(s.url), i, context, now()),
+        );
+        const weatherOutcome = await weatherPromise;
+        const weatherBundle =
+          weatherOutcome.status === 'fulfilled'
+            ? weatherOutcome.value
+            : emptyWeather(trip, cleanText(weatherOutcome.reason.message, 180));
+        const sources = [...web, ...weatherBundle.sources];
+        const assessment = web.some((s) => s.fetched && s.quality.relevant)
+          ? await stage('assessment', stages.assessment, () =>
+              assess({ ...trip, sources: web }),
+            )
+          : { status: 'fulfilled', value: null };
+        const ai = assessment.status === 'fulfilled' ? assessment.value : null;
+        const verified = verifyClaims(
+          [...(ai?.claims || []), ...deterministicClaims(web, context)],
+          web,
+          trip,
+          collectedAt,
+        );
+        const issues = mergeWeatherIssues(
+          verified.issues,
+          weatherBundle.issues,
+          sources,
+        );
+        const leads = buildLeads(web, issues, context);
+        const relevant = web.filter((s) => s.quality.relevant);
+        const currentPages = relevant.filter(
+          (s) => s.fetched && s.quality.recency === 'recent',
+        );
+        const publishers = new Set(currentPages.map((s) => publisherKey(s.url)))
+          .size;
+        const distinctDocuments = new Set(
+          currentPages.map((s) => s.contentHash),
+        ).size;
+        const succeeded = searches.filter(
+          (s) => s.status === 'fulfilled',
+        ).length;
+        const populated = searches.filter(
+          (s) => s.status === 'fulfilled' && s.value.length,
+        ).length;
+        const coverageStatus =
+          currentPages.length >= 4 &&
+          publishers >= 3 &&
+          distinctDocuments >= 3 &&
+          succeeded >= 6 &&
+          populated >= 4
+            ? 'adequate'
+            : relevant.length
+              ? 'limited'
+              : 'inconclusive';
+        const pagesFetched = web.filter((s) => s.fetched).length;
+        const laneStats = groups.map((group, i) => ({
+          id: group.id,
+          label: group.label,
+          type: group.domainType,
+          recencyMinutes: group.recencyMinutes,
+          succeeded: searches[i].status === 'fulfilled',
+          resultCount: searches[i].value?.length || 0,
+          selectedCount: candidates.filter((s) => s.groups.includes(group.id))
+            .length,
+          searchMode:
+            searches[i].value?.searchMode ||
+            searches[i].value?.[0]?.searchMode ||
+            'targeted',
+          error:
+            searches[i].status === 'rejected'
+              ? cleanText(searches[i].reason.message, 160)
+              : null,
+          durationMs: timings[`search:${group.id}`].durationMs,
+        }));
+        const resultStatus =
+          coverageStatus === 'adequate'
+            ? 'complete'
+            : sources.length
+              ? 'partial'
+              : 'unavailable';
+        const summary = issues.length
+          ? `${issues.length} source-supported report(s) or forecast signal(s) need attention.`
+          : leads.length
+            ? `${leads.length} local source(s) are available to review; no disruption met the evidence checks for this trip.`
+            : 'No current disruption could be established from the evidence available in this scan.';
+        const briefing = `${trip.destination}: ${summary} ${weatherSummary(weatherBundle.meta)} ${coverageStatus === 'adequate' ? 'Several current publications were collected; coverage is not exhaustive.' : `Web coverage is ${coverageStatus}: ${relevant.length} relevant source(s), ${pagesFetched} opened page(s).`} Confirm conditions close to departure.`;
+        const nextSteps = [
+          {
+            title: 'Check official weather warnings',
+            url: 'https://mausam.imd.gov.in/',
+            detail: 'Review IMD warnings for the destination and travel dates.',
+          },
+          {
+            title: 'Confirm transport and local access',
+            url: 'https://enquiry.indianrail.gov.in/mntes/',
+            detail:
+              'Check your operator and local police updates before departure; this link covers Indian Railways train enquiries.',
+          },
+        ];
+        if (relevant.some((s) => s.trust === 'Official government')) {
+          const official = relevant.find(
+            (s) => s.trust === 'Official government',
+          );
+          nextSteps.unshift({
+            title: 'Read the local official source',
+            url: official.url,
+            detail:
+              'Verify its issue date, location and whether the notice is still active.',
+          });
+        }
+        const riskScore = computeOverallScore(issues);
+        return {
+          engineVersion: ENGINE_VERSION,
+          destination: trip.destination,
+          startDate: trip.startDate,
+          endDate: trip.endDate,
+          resultStatus,
+          coverageStatus,
+          briefing,
+          hasIssues: issues.length > 0,
+          issueCount: issues.length,
+          issues,
+          leads,
+          nextSteps,
+          riskScore,
+          riskLevel: issues.length
+            ? riskLevel(riskScore)
+            : coverageStatus === 'inconclusive'
+              ? 'Unable to verify'
+              : 'No supported disruption identified',
+          scoreMeaning:
+            'Highest evidence-backed signal severity; not a probability of harm.',
+          highlights: [
+            {
+              title: 'Local information',
+              detail: `${relevant.length} relevant web source(s); ${leads.length} additional source(s) to review.`,
+            },
+            {
+              title: 'Weather for your dates',
+              detail: weatherSummary(weatherBundle.meta),
+            },
+            {
+              title: 'What to do next',
+              detail:
+                'Read the cited evidence and confirm official warnings and transport status before travelling.',
+            },
+          ],
+          relevantSources: relevant.length,
+          sources: sources.map(({ text, snippet, ...source }) => ({
+            ...source,
+            preview: cleanText(text || snippet, 480),
+          })),
+          searchLaneStats: laneStats,
+          searchResultsReturned: rows.length,
+          sourcesChecked: web.length,
+          selectedWebSources: candidates.length,
+          pagesFetched,
+          weatherSourcesChecked: weatherBundle.sources.length,
+          weather: weatherBundle.meta,
+          searchMs,
+          fetchMs: timings.extraction?.durationMs || 0,
+          assessmentMs: timings.assessment?.durationMs || 0,
+          analysisMode: ai ? 'llm' : 'rules',
+          model: ai
+            ? `${ai._providerUsed} · ${ai._modelUsed}`
+            : 'Evidence checks',
+          providerUsed: ai ? ai._providerUsed : 'Rules',
+          providerFallbackReason: ai?._fallbackReason || null,
+          sourceHealth: {
+            searchGroupsSucceeded: succeeded,
+            searchGroupsTried: groups.length,
+            selectedWebSources: web.length,
+            relevantWebSources: relevant.length,
+            searchLanes: laneStats,
+            pagesFetched,
+            publisherCount: publishers,
+            distinctDocumentCount: distinctDocuments,
+            fetchErrorCount: fetched.errors.length,
+            fetchRequestError: fetched.requestError,
+            llmError:
+              assessment.status === 'rejected'
+                ? cleanText(assessment.reason.message, 240)
+                : null,
+            llmFallbackReason: ai?._fallbackReason || null,
+            rejectedClaimCount: verified.rejectedCount,
+            weatherApi: weatherBundle.meta,
+          },
+          performance: {
+            budgetMs: REQUEST_BUDGET_MS,
+            elapsedMs: Math.round(performance.now() - started),
+            stages: timings,
+          },
+          collectedAt: new Date(collectedAt).toISOString(),
+          disclaimer:
+            'TraceRisk provides travel information, not an official safety rating or a guarantee of safety. Source quotations are checked against retrieved text, not independently fact-checked. Weather signals are model-derived; confirm important decisions with authorities and operators.',
+        };
+      },
+      REQUEST_BUDGET_MS - 500,
+      'The scan could not finish within its processing budget.',
+    );
+}
+export const analyzeTrip = createAnalyzer();

@@ -1,25 +1,3 @@
-export async function settleWithConcurrency(items, concurrency, task) {
-  const outcomes = new Array(items.length);
-  let nextIndex = 0;
-  const workerCount = Math.max(1, Math.min(concurrency, items.length));
-  await Promise.all(
-    Array.from({ length: workerCount }, async () => {
-      while (true) {
-        const index = nextIndex++;
-        if (index >= items.length) return;
-        try {
-          outcomes[index] = {
-            status: 'fulfilled',
-            value: await task(items[index]),
-          };
-        } catch (reason) {
-          outcomes[index] = { status: 'rejected', reason };
-        }
-      }
-    }),
-  );
-  return outcomes;
-}
 export function cleanText(value, maxChars = 500) {
   return String(value ?? '')
     .replace(/\u0000/g, '')
@@ -99,6 +77,31 @@ export function normalizeUrl(value) {
       /^https?:\/\//i.test(value) ? value : `https://${value}`,
     );
     if (url.username || url.password) return '';
+    const host = url.hostname.toLowerCase().replace(/\.$/, '');
+    url.hostname = host;
+    if (url.port && !['80', '443'].includes(url.port)) return '';
+    if (
+      !host.includes('.') ||
+      host.includes(':') ||
+      /(?:^|\.)(?:localhost|local|internal|test|invalid)$/.test(host)
+    )
+      return '';
+    if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) {
+      const [a, b] = host.split('.').map(Number);
+      if (
+        a === 0 ||
+        a === 10 ||
+        a === 127 ||
+        a >= 224 ||
+        (a === 169 && b === 254) ||
+        (a === 172 && b >= 16 && b <= 31) ||
+        (a === 192 && b === 168) ||
+        (a === 100 && b >= 64 && b <= 127)
+      )
+        return '';
+    }
+    for (const key of [...url.searchParams.keys()])
+      if (/^(utm_|fbclid$|gclid$)/i.test(key)) url.searchParams.delete(key);
     url.hash = '';
     return url.toString().replace(/\/$/, '');
   } catch {

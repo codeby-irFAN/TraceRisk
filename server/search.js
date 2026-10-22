@@ -4,493 +4,365 @@ import {
   SEARCH_TIMEOUT_MS,
   FETCH_TIMEOUT_MS,
   FETCH_BATCH_SIZE,
+  hasCredential,
 } from './config.js';
-import { fetchJson } from './http.js';
-import { cleanText, normalizeUrl, safeDomain, sourceTrust } from './utils.js';
-export function buildQueries(destination, startDate, endDate) {
-  const place = buildPlaceContext(destination);
-  const current = 'latest recent update';
-  const recent = 10_080; // 7 days
-  const recentMonth = 43_200; // 30 days
+import {
+  fetchJson,
+  withRequestBudget,
+  currentSignal,
+  createConcurrencyGate,
+} from './http.js';
+import { cleanText, normalizeUrl, sourceTrust } from './utils.js';
+import {
+  placeContext,
+  placeMatch,
+  publisherKey,
+  publicationDay,
+  travelRelevance,
+} from './evidence.js';
 
-  return [
-    {
-      id: 'traffic',
-      label: 'Traffic & road closures',
-      domainType: 'news',
-      recencyMinutes: recent,
-      query: `${place.query} traffic police advisory road closure roadblock highway diversion waterlogging congestion accident ${current} ${startDate} ${endDate}`,
-      fallbackQuery: `${place.query} traffic advisory road closure accident diversion congestion`,
-    },
-    {
-      id: 'transport',
-      label: 'Rail, airport & public transport',
-      domainType: 'news',
-      recencyMinutes: recent,
-      query: `${place.query} train cancellation railway disruption airport flight delay metro shutdown bus strike transport advisory ${current} ${startDate} ${endDate}`,
-      fallbackQuery: `${place.query} train airport metro bus cancellation delay strike disruption`,
-    },
-    {
-      id: 'civil-unrest',
-      label: 'Protests & civil unrest',
-      domainType: 'news',
-      recencyMinutes: recent,
-      query: `${place.query} protest demonstration clash violence curfew bandh shutdown strike blockade security incident ${current}`,
-      fallbackQuery: `${place.query} protest curfew clash violence strike blockade security`,
-    },
-    {
-      id: 'official-advisories',
-      label: 'Official advisories & travel restrictions',
-      domainType: 'web',
-      recencyMinutes: null,
-      query: `${place.query} official travel advisory government police movement restriction curfew entry permit road order site:gov.in OR site:police.gov.in OR site:nic.in`,
-      fallbackQuery: `${place.query} official travel advisory police curfew permit travel restriction`,
-    },
-    {
-      id: 'health',
-      label: 'Health & disease outbreaks',
-      domainType: 'news',
-      recencyMinutes: recentMonth,
-      query: `${place.query} disease outbreak dengue malaria chikungunya contaminated water hospital public health advisory health department ${current}`,
-      fallbackQuery: `${place.query} disease outbreak health advisory dengue contaminated water hospital`,
-    },
-    {
-      id: 'crime',
-      label: 'Crime & visitor safety',
-      domainType: 'news',
-      recencyMinutes: recentMonth,
-      query: `${place.query} police warning tourist scam pickpocket theft robbery fraud safety advisory accident crime ${current}`,
-      fallbackQuery: `${place.query} police advisory crime tourist scam theft safety`,
-    },
-    {
-      id: 'infrastructure',
-      label: 'Infrastructure & civic emergencies',
-      domainType: 'news',
-      recencyMinutes: recent,
-      query: `${place.query} power outage blackout fire building collapse water supply disruption civic emergency hospital closure ${current}`,
-      fallbackQuery: `${place.query} power outage fire water disruption civic emergency road closure`,
-    },
-    {
-      id: 'regional-news',
-      label: 'Regional news & local reports',
-      domainType: 'news',
-      recencyMinutes: recent,
-      query: `${place.query} regional local news public safety road rail protest warning incident travel disruption ${current}`,
-      fallbackQuery: `${place.query} local news latest incident safety travel disruption`,
-    },
-  ];
-}
+const searchGate = createConcurrencyGate(24);
+const extractionGate = createConcurrencyGate(12);
 export function buildPlaceContext(destination) {
-  const original = String(destination || '').trim();
-  const parts = original
-    .split(',')
-    .map((part) => part.trim())
-    .filter(Boolean);
-  const city = parts[0] || original;
-  const explicitRegion = parts.slice(1).join(' ');
-  const inferred = inferIndianRegion(city);
-  const region = explicitRegion || inferred;
-  const sameAsRegion =
-    Boolean(region) &&
-    city.toLocaleLowerCase('en-IN') === region.toLocaleLowerCase('en-IN');
-  const query =
-    region && !sameAsRegion ? `"${city}" ${region} India` : `"${city}" India`;
-  return { city, region, query };
-}
-
-function inferIndianRegion(city) {
-  const normalized = String(city || '')
-    .toLowerCase()
-    .trim();
-  const map = {
-    imphal: 'Manipur',
-    manipur: 'Manipur',
-    gangtok: 'Sikkim',
-    sikkim: 'Sikkim',
-    kohima: 'Nagaland',
-    nagaland: 'Nagaland',
-    aizawl: 'Mizoram',
-    mizoram: 'Mizoram',
-    itanagar: 'Arunachal Pradesh',
-    shillong: 'Meghalaya',
-    meghalaya: 'Meghalaya',
-    guwahati: 'Assam',
-    assam: 'Assam',
-    agartala: 'Tripura',
-    tripura: 'Tripura',
-    shimla: 'Himachal Pradesh',
-    manali: 'Himachal Pradesh',
-    dharamshala: 'Himachal Pradesh',
-    dehradun: 'Uttarakhand',
-    rishikesh: 'Uttarakhand',
-    nainital: 'Uttarakhand',
-    srinagar: 'Jammu and Kashmir',
-    jammu: 'Jammu and Kashmir',
-    leh: 'Ladakh',
-    mumbai: 'Maharashtra',
-    pune: 'Maharashtra',
-    bengaluru: 'Karnataka',
-    bangalore: 'Karnataka',
-    chennai: 'Tamil Nadu',
-    kolkata: 'West Bengal',
-    jaipur: 'Rajasthan',
-    lucknow: 'Uttar Pradesh',
-    varanasi: 'Uttar Pradesh',
-    ayodhya: 'Uttar Pradesh',
-    bhopal: 'Madhya Pradesh',
-    indore: 'Madhya Pradesh',
-    patna: 'Bihar',
-    ranchi: 'Jharkhand',
-    raipur: 'Chhattisgarh',
-    hyderabad: 'Telangana',
-    vijayawada: 'Andhra Pradesh',
-    amaravati: 'Andhra Pradesh',
-    kochi: 'Kerala',
-    thiruvananthapuram: 'Kerala',
-    panaji: 'Goa',
-    chandigarh: 'Chandigarh',
-    delhi: 'Delhi',
-    'new delhi': 'Delhi',
-    gurugram: 'Haryana',
-    gurgaon: 'Haryana',
-    faridabad: 'Haryana',
-    amritsar: 'Punjab',
-    ludhiana: 'Punjab',
+  const context = placeContext(destination);
+  return {
+    ...context,
+    query: `"${context.city.replace(/["\\]/g, '')}" ${context.region} India`
+      .replace(/\s+/g, ' ')
+      .trim(),
   };
-  return map[normalized] || '';
+}
+export function buildQueries(destination, _startDate, _endDate, location) {
+  const context = placeContext(destination, location);
+  const place =
+    `"${context.city.replace(/["\\]/g, '')}" ${context.region.toLowerCase() === context.city.toLowerCase() ? '' : context.region} India`
+      .replace(/\s+/g, ' ')
+      .trim();
+  const lanes = [
+    [
+      'traffic',
+      'Traffic & road closures',
+      '(traffic advisory OR road closed)',
+      'traffic update',
+    ],
+    [
+      'transport',
+      'Rail, airport & public transport',
+      '(train cancelled OR flight disruption)',
+      'train airport bus updates',
+    ],
+    [
+      'civil-unrest',
+      'Protests & civil unrest',
+      '(protest OR curfew OR bandh)',
+      'local security updates',
+    ],
+    [
+      'official-advisories',
+      'Official advisories & travel restrictions',
+      '(traffic OR disaster) advisory (site:gov.in OR site:nic.in)',
+      'official travel advisory',
+    ],
+    [
+      'health',
+      'Health & disease outbreaks',
+      '(health advisory OR outbreak)',
+      'health department updates',
+    ],
+    [
+      'crime',
+      'Crime & visitor safety',
+      '(police advisory OR tourist scam)',
+      'visitor safety advisory',
+    ],
+    [
+      'infrastructure',
+      'Infrastructure & civic emergencies',
+      '(power outage OR water disruption)',
+      'local infrastructure updates',
+    ],
+    [
+      'regional-news',
+      'Regional news & local reports',
+      '(travel advisory OR landslide OR flood)',
+      'latest local news',
+    ],
+  ];
+  return lanes.map(([id, label, terms, broad]) => ({
+    id,
+    label,
+    context,
+    domainType: id === 'official-advisories' ? 'web' : 'news',
+    recencyMinutes:
+      id === 'health' || id === 'official-advisories' ? 43_200 : 20_160,
+    query: `${place} ${terms}`,
+    fallbackQuery: `${place} ${broad}`,
+  }));
 }
 
 export async function searchTinyFish(group) {
-  const runSearch = async ({ query, targeted }) => {
-    const url = new URL(TINYFISH_SEARCH);
-    url.searchParams.set('query', query);
-    url.searchParams.set('location', 'IN');
-    url.searchParams.set('language', 'en');
-
-    if (targeted) {
-      url.searchParams.set('domain_type', group.domainType || 'web');
-      url.searchParams.set('page', String(group.page ?? 0));
-      if (Number.isInteger(group.recencyMinutes) && group.recencyMinutes > 0) {
-        url.searchParams.set('recency_minutes', String(group.recencyMinutes));
-      }
-    }
-
-    const data = await fetchJson(
-      url,
-      {
-        headers: {
-          'X-API-Key': process.env.TINYFISH_API_KEY,
-          'User-Agent': 'TraceRisk-App/3.2.0',
-        },
-      },
-      SEARCH_TIMEOUT_MS,
-    );
-
-    const results = Array.isArray(data?.results) ? data.results : [];
-    return results
-      .filter((item) => item?.url)
-      .map((item) => ({
-        ...item,
-        url: normalizeUrl(item.url),
-        group: group.id,
-        laneLabel: group.label || group.id,
-        searchMode: targeted ? 'targeted' : 'broad-fallback',
-        publishedAt:
-          item.date ||
-          item.publishedAt ||
-          item.published_at ||
-          item.published_date ||
-          item.publication_date ||
-          '',
-      }))
-      .filter((item) => /^https?:\/\//i.test(item.url));
-  };
-
-  let targetedResults = [];
-  try {
-    targetedResults = await runSearch({
-      query: group.query,
-      targeted: true,
+  if (!hasCredential('TINYFISH_API_KEY'))
+    throw Object.assign(new Error('Web search is not configured.'), {
+      code: 'MISSING_SEARCH_KEY',
     });
-  } catch (error) {
-    if ([401, 403, 429].includes(error?.status)) throw error;
-    console.warn(
-      `[TraceRisk] Search lane ${group.id} targeted request failed: ${cleanText(error?.message || 'unknown error', 150)}. Trying broad fallback once.`,
+  const search = async (targeted) =>
+    withRequestBudget(
+      () =>
+        searchGate(async () => {
+          const url = new URL(TINYFISH_SEARCH);
+          url.searchParams.set(
+            'query',
+            targeted ? group.query : group.fallbackQuery,
+          );
+          url.searchParams.set('location', 'IN');
+          url.searchParams.set('language', 'en');
+          if (targeted) {
+            url.searchParams.set('domain_type', group.domainType || 'web');
+            if (group.recencyMinutes)
+              url.searchParams.set(
+                'recency_minutes',
+                String(group.recencyMinutes),
+              );
+          }
+          const data = await fetchJson(
+            url,
+            {
+              headers: { 'X-API-Key': process.env.TINYFISH_API_KEY },
+              retryRateLimit: false,
+            },
+            SEARCH_TIMEOUT_MS,
+          );
+          const rows = data?.results ?? data?.data?.results;
+          if (!Array.isArray(rows))
+            throw new Error(
+              'Search provider returned an unsupported response shape.',
+            );
+          return rows
+            .slice(0, 30)
+            .map((item) => ({
+              url: normalizeUrl(item?.url),
+              title: cleanText(item?.title, 220),
+              snippet: cleanText(item?.snippet || item?.description, 1200),
+              publishedAt: cleanText(
+                item?.date ||
+                  item?.publishedAt ||
+                  item?.published_at ||
+                  item?.published_date ||
+                  item?.publication_date,
+                60,
+              ),
+              group: group.id,
+              searchMode: targeted ? 'targeted' : 'broad-fallback',
+            }))
+            .filter(
+              (item) =>
+                item.url &&
+                (!group.context ||
+                  (!['unrelated', 'conflicting'].includes(
+                    placeMatch(`${item.title} ${item.snippet}`, group.context),
+                  ) &&
+                    travelRelevance(item, group.context))),
+            )
+            .slice(0, 10);
+        }),
+      SEARCH_TIMEOUT_MS,
+      'Search attempt exceeded its time budget.',
     );
+  let firstError;
+  try {
+    const rows = await search(true);
+    if (rows.length) return rows;
+  } catch (error) {
+    currentSignal()?.throwIfAborted();
+    if ([401, 403, 429].includes(error.status)) throw error;
+    firstError = error;
   }
-
-  console.log(
-    `[TraceRisk] Search lane ${group.id} (targeted/${group.domainType || 'web'}) returned ${targetedResults.length} usable results.`,
-  );
-
-  if (targetedResults.length > 0) return targetedResults;
-
-  const fallbackQuery =
-    group.fallbackQuery ||
-    `${buildPlaceContext(group.query || '').query} local safety travel advisory`;
-
-  console.warn(
-    `[TraceRisk] Search lane ${group.id} returned 0 targeted results; retrying a broader query without freshness or domain-type filters.`,
-  );
-
-  const fallbackResults = await runSearch({
-    query: fallbackQuery,
-    targeted: false,
-  });
-
-  console.log(
-    `[TraceRisk] Search lane ${group.id} (broad fallback) returned ${fallbackResults.length} usable results.`,
-  );
-
-  return fallbackResults;
+  const rows = await search(false);
+  // Empty fallback is still a completed search, with no implication about safety.
+  Object.defineProperty(rows, 'searchMode', { value: 'broad-fallback' });
+  if (firstError)
+    Object.defineProperty(rows, 'warning', {
+      value: cleanText(firstError.message, 160),
+    });
+  return rows;
 }
-export function rankAndSelectCandidates(results, destination, maxResults) {
+
+export function sourceRelevanceScore(source, destination, location) {
+  const match = placeMatch(
+    `${source.title || ''} ${source.snippet || ''} ${source.text || ''}`,
+    placeContext(destination, location),
+  );
+  return match === 'city'
+    ? 6
+    : match === 'region'
+      ? 4
+      : match === 'ambiguous'
+        ? 2
+        : 0;
+}
+
+export function rankAndSelectCandidates(
+  results,
+  destination,
+  maxResults,
+  location,
+  now = Date.now(),
+) {
   const unique = new Map();
-  for (const item of results) {
-    const key = normalizeUrl(item.url);
-    if (!key) continue;
-    const ranked = { ...item, rankScore: scoreCandidate(item, destination) };
-    const existing = unique.get(key);
-    if (!existing || ranked.rankScore > existing.rankScore)
-      unique.set(key, ranked);
+  for (const item of results.slice(0, 240)) {
+    const url = normalizeUrl(item.url);
+    if (!url) continue;
+    const relevance = sourceRelevanceScore(item, destination, location);
+    if (!relevance) continue;
+    const day = publicationDay(item.publishedAt || item.date);
+    const relative = String(item.publishedAt || '').match(
+      /(\d+)\s*(minute|hour|day|week)s?\s*ago/i,
+    );
+    // Relative search ages help ranking only; they never establish a claim's date.
+    const age = day
+      ? (now - Date.parse(day)) / 86_400_000
+      : relative
+        ? Number(relative[1]) *
+          { minute: 1 / 1440, hour: 1 / 24, day: 1, week: 7 }[
+            relative[2].toLowerCase()
+          ]
+        : null;
+    const rankScore =
+      relevance * 10 +
+      (travelRelevance(item, placeContext(destination, location)) ? 25 : -30) +
+      (sourceTrust(url) === 'Official government' ? 12 : 0) +
+      (age !== null && age >= 0 && age < 8
+        ? 15
+        : age !== null && (age < 0 || age > 30)
+          ? -12
+          : 0);
+    const previous = unique.get(url);
+    const groups = [...new Set([...(previous?.groups || []), item.group])];
+    if (!previous || rankScore > previous.rankScore)
+      unique.set(url, { ...item, url, rankScore, groups });
+    else previous.groups = groups;
   }
-
-  const sorted = [...unique.values()].sort((a, b) => b.rankScore - a.rankScore);
-  const lanes = [
-    'traffic',
-    'transport',
-    'civil-unrest',
-    'official-advisories',
-    'health',
-    'crime',
-    'infrastructure',
-    'regional-news',
-  ];
-  const selected = [];
-  const pickedUrls = new Set();
-  const domainCounts = new Map();
-  const laneCounts = new Map();
-
-  for (let round = 0; round < 3 && selected.length < maxResults; round++) {
-    for (const lane of lanes) {
-      if (selected.length >= maxResults) break;
-      if ((laneCounts.get(lane) || 0) >= 3) continue;
-      const candidate = sorted.find(
-        (item) =>
-          item.group === lane &&
-          !pickedUrls.has(normalizeUrl(item.url)) &&
-          (domainCounts.get(safeDomain(item.url)) || 0) < (round === 0 ? 1 : 2),
-      );
-      if (!candidate) continue;
-      const key = normalizeUrl(candidate.url);
-      const domain = safeDomain(candidate.url);
-      selected.push(candidate);
-      pickedUrls.add(key);
-      domainCounts.set(domain, (domainCounts.get(domain) || 0) + 1);
-      laneCounts.set(lane, (laneCounts.get(lane) || 0) + 1);
-    }
-  }
-
-  for (const item of sorted) {
-    if (selected.length >= maxResults) break;
-    const key = normalizeUrl(item.url);
-    const domain = safeDomain(item.url);
-    if (pickedUrls.has(key) || (domainCounts.get(domain) || 0) >= 3) continue;
-    selected.push(item);
-    pickedUrls.add(key);
-    domainCounts.set(domain, (domainCounts.get(domain) || 0) + 1);
-    laneCounts.set(item.group, (laneCounts.get(item.group) || 0) + 1);
-  }
-
-  for (const item of sorted) {
-    if (selected.length >= maxResults) break;
-    const key = normalizeUrl(item.url);
-    if (pickedUrls.has(key)) continue;
-    selected.push(item);
-    pickedUrls.add(key);
-  }
-
-  console.log(
-    `[TraceRisk] Candidate pool ${unique.size}; selected ${selected.length}; lane distribution: ${JSON.stringify(Object.fromEntries(laneCounts))}.`,
+  const sorted = [...unique.values()].sort(
+    (a, b) => b.rankScore - a.rankScore || a.url.localeCompare(b.url),
   );
-  return selected.slice(0, maxResults);
-}
-
-function scoreCandidate(item, destination) {
-  const text = `${item.title || ''} ${item.snippet || ''}`.toLowerCase();
-  let score = 0;
-
-  const trust = sourceTrust(item.url);
-  if (trust === 'Official government') score += 24;
-  if (trust === 'News outlet') score += 14;
-
-  const { city, region } = buildPlaceContext(destination);
-  const cityNorm = city.toLowerCase();
-  if (cityNorm && text.includes(cityNorm)) score += 22;
-  if (region && text.includes(region.toLowerCase())) score += 10;
-  if (
-    /alert|warning|advisory|closure|diversion|flood|landslide|heavy rain|road block|roadblock|strike|outbreak|curfew|police|traffic|disruption|cancel|waterlogging|accident|tourist safety|movement restriction|permit|protest|clash|blackout/.test(
-      text,
-    )
-  )
-    score += 16;
-  if (/latest|today|current|updated|this week/.test(text)) score += 5;
-
-  const dateValue =
-    item.publishedAt ||
-    item.date ||
-    item.published_at ||
-    item.published_date ||
-    item.publication_date;
-  if (dateValue) {
-    const published = new Date(dateValue);
-    if (!Number.isNaN(published.getTime())) {
-      const ageDays = (Date.now() - published.getTime()) / 86_400_000;
-      if (ageDays >= 0 && ageDays <= 7) score += 22;
-      else if (ageDays > 7 && ageDays <= 30) score += 12;
-      else if (ageDays > 180) score -= 22;
-      else if (ageDays > 30) score -= 6;
-    }
+  const selected = [],
+    used = new Set(),
+    publishers = new Map();
+  const lanes = [...new Set(results.map((r) => r.group))];
+  const add = (item) => {
+    selected.push(item);
+    used.add(item.url);
+    const domain = publisherKey(item.url);
+    publishers.set(domain, (publishers.get(domain) || 0) + 1);
+  };
+  for (const lane of lanes) {
+    if (selected.length >= maxResults) break;
+    const item = sorted.find(
+      (r) =>
+        r.groups.includes(lane) &&
+        !used.has(r.url) &&
+        (publishers.get(publisherKey(r.url)) || 0) < 2,
+    );
+    if (item) add(item);
   }
-
-  if (
-    /archive|archives|annual report|historic(al)?|policy paper|national policy|scheme guidelines|recruitment|tender/.test(
-      text,
+  for (const item of sorted) {
+    if (selected.length >= maxResults) break;
+    if (
+      !used.has(item.url) &&
+      (publishers.get(publisherKey(item.url)) || 0) < 3
     )
-  )
-    score -= 24;
-  return score;
-}
-
-export function sourceRelevanceScore(source, destination) {
-  const text =
-    `${source.title || ''} ${source.snippet || ''} ${(source.text || '').slice(0, 2200)}`.toLowerCase();
-  let score = 0;
-  const { city, region } = buildPlaceContext(destination);
-  if (city && text.includes(city.toLowerCase())) score += 3;
-  if (region && text.includes(region.toLowerCase())) score += 2;
-  if (
-    /weather|forecast|rain|flood|landslide|road closure|road block|traffic|transport|strike|protest|curfew|police|advisory|outbreak|disease|tourist|public safety|accident|disruption|alert|warning|entry permit|movement restriction/.test(
-      text,
-    )
-  )
-    score += 3;
-  if (
-    /archive|archives|annual report|policy paper|national policy|historical|scheme guidelines|recruitment|tender/.test(
-      text,
-    )
-  )
-    score -= 4;
-  const dateValue = source.publishedAt || source.published_date || source.date;
-  if (dateValue) {
-    const published = new Date(dateValue);
-    if (!Number.isNaN(published.getTime())) {
-      const ageDays = (Date.now() - published.getTime()) / 86_400_000;
-      if (ageDays >= 0 && ageDays <= 30) score += 2;
-      if (ageDays > 180) score -= 3;
-    }
+      add(item);
   }
-  return score;
+  return selected;
 }
 
 export async function fetchTinyFish(sources) {
-  const mergedResults = new Map();
-  const allErrors = [];
-  const requestErrors = [];
-  if (!sources.length)
-    return { results: mergedResults, errors: allErrors, requestError: null };
-
+  const results = new Map(),
+    errors = [];
   const batches = [];
-  for (let index = 0; index < sources.length; index += FETCH_BATCH_SIZE) {
-    batches.push(sources.slice(index, index + FETCH_BATCH_SIZE));
-  }
-
-  console.log(
-    `[TraceRisk] Fetching ${sources.length} URLs in ${batches.length} parallel batch(es), at most ${FETCH_BATCH_SIZE} URLs each.`,
+  for (let i = 0; i < sources.length; i += FETCH_BATCH_SIZE)
+    batches.push(sources.slice(i, i + FETCH_BATCH_SIZE));
+  await Promise.all(
+    batches.map(async (batch) => {
+      try {
+        const response = await withRequestBudget(
+          () =>
+            extractionGate(() =>
+              fetchJson(
+                TINYFISH_FETCH,
+                {
+                  method: 'POST',
+                  headers: {
+                    'X-API-Key': process.env.TINYFISH_API_KEY,
+                    'Content-Type': 'application/json',
+                  },
+                  retryRateLimit: false,
+                  body: JSON.stringify({
+                    urls: batch.map((s) => s.url),
+                    format: 'markdown',
+                    links: false,
+                    image_links: false,
+                  }),
+                },
+                FETCH_TIMEOUT_MS,
+              ),
+            ),
+          FETCH_TIMEOUT_MS,
+          'Page extraction exceeded its time budget.',
+        );
+        currentSignal()?.throwIfAborted();
+        if (!Array.isArray(response?.results))
+          throw new Error(
+            'Extraction provider returned an unsupported response shape.',
+          );
+        const allowed = new Set(batch.map((s) => normalizeUrl(s.url)));
+        for (const item of response.results.slice(0, FETCH_BATCH_SIZE * 2)) {
+          const original = normalizeUrl(item?.url || item?.requested_url);
+          // A redirect destination alone cannot identify the requested document.
+          if (!allowed.has(original)) continue;
+          const finalUrl = normalizeUrl(
+            item?.final_url || item?.finalUrl || original,
+          );
+          if (!finalUrl) continue;
+          const text = cleanText(
+            item?.text || item?.markdown || item?.content || item?.raw_content,
+            60_000,
+          );
+          if (text)
+            results.set(original, {
+              text,
+              title: cleanText(item?.title, 220),
+              finalUrl,
+              publishedAt: cleanText(
+                item?.published_date ||
+                  item?.publishedAt ||
+                  item?.datePublished,
+                60,
+              ),
+            });
+        }
+        for (const item of batch)
+          if (!results.has(item.url))
+            errors.push({
+              url: item.url,
+              error: 'No extracted page returned.',
+            });
+      } catch (error) {
+        currentSignal()?.throwIfAborted();
+        errors.push(
+          ...batch.map((item) => ({
+            url: item.url,
+            error: cleanText(error.message, 160),
+          })),
+        );
+      }
+    }),
   );
-  const outcomes = await Promise.allSettled(batches.map(fetchTinyFishBatch));
-  outcomes.forEach((outcome, index) => {
-    if (outcome.status === 'rejected') {
-      requestErrors.push(
-        `batch ${index + 1}: ${cleanText(outcome.reason?.message || 'unknown fetch error', 180)}`,
-      );
-      return;
-    }
-    for (const [url, value] of outcome.value.results.entries())
-      mergedResults.set(url, value);
-    allErrors.push(...outcome.value.errors);
-    if (outcome.value.requestError)
-      requestErrors.push(`batch ${index + 1}: ${outcome.value.requestError}`);
-  });
-
   return {
-    results: mergedResults,
-    errors: allErrors,
-    requestError: requestErrors.length
-      ? requestErrors.join('; ').slice(0, 420)
+    results,
+    errors,
+    requestError: errors.length
+      ? `${errors.length} page(s) could not be opened.`
       : null,
   };
-}
-
-async function fetchTinyFishBatch(sources) {
-  const fetchedByUrl = new Map();
-  let response = null;
-  let requestError = null;
-
-  try {
-    response = await fetchJson(
-      TINYFISH_FETCH,
-      {
-        method: 'POST',
-        headers: {
-          'X-API-Key': process.env.TINYFISH_API_KEY,
-          'Content-Type': 'application/json',
-          'User-Agent': 'TraceRisk-App/3.2.0',
-        },
-        body: JSON.stringify({
-          urls: sources.map((source) => source.url),
-          format: 'markdown',
-          links: false,
-          image_links: false,
-        }),
-      },
-      FETCH_TIMEOUT_MS,
-    );
-  } catch (error) {
-    requestError = cleanText(
-      error?.message || 'Unknown TinyFish Fetch error',
-      220,
-    );
-    console.warn('[TraceRisk] TinyFish Fetch batch failed:', requestError);
-  }
-
-  const results = Array.isArray(response?.results) ? response.results : [];
-  const errors = Array.isArray(response?.errors) ? response.errors : [];
-  if (errors.length)
-    console.warn(
-      `[TraceRisk] TinyFish Fetch batch reported ${errors.length} URL error(s).`,
-    );
-
-  for (const item of results) {
-    const resultUrl = normalizeUrl(item?.url || '');
-    const finalUrl = normalizeUrl(item?.final_url || item?.finalUrl || '');
-    const text = cleanText(
-      item?.text || item?.markdown || item?.content || item?.raw_content || '',
-      4500,
-    );
-    const normalized = { title: item?.title || '', text };
-    if (resultUrl) fetchedByUrl.set(resultUrl, normalized);
-    if (finalUrl) fetchedByUrl.set(finalUrl, normalized);
-    const matched = sources.find((source) => {
-      const original = normalizeUrl(source.url);
-      return original && (original === resultUrl || original === finalUrl);
-    });
-    if (matched) fetchedByUrl.set(normalizeUrl(matched.url), normalized);
-  }
-
-  const failedResults = Array.isArray(response?.failed_results)
-    ? response.failed_results
-    : [];
-  errors.push(...failedResults);
-  return { results: fetchedByUrl, errors, requestError };
 }

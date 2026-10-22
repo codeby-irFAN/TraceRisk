@@ -1,0 +1,54 @@
+# Backend evaluation
+
+[README](../README.md) · [Decisions](../DECISIONS.md) · [Deployment](DEPLOYMENT.md)
+
+Version 4 has regression-tested evidence checks and a twenty-second processing budget. The measurements below demonstrate working live retrieval in this cloud environment. They do not establish publication-grade factual accuracy or an uptime/latency guarantee.
+
+## Live sample: 22 October 2026
+
+Measured with Node.js 24, TinyFish Search/Fetch and public Open-Meteo endpoints. No Gemini or Groq credentials were configured, so these scans used deterministic quotation verification. Trips covered 22–23 October 2026. The benchmark selected the first ranked location for each explicit query; the normal UI requires a user confirmation.
+
+| Confirmed destination     | Lookup | Scan   | Opened pages | Source leads | Forecast days | Web coverage |
+| ------------------------- | ------ | ------ | ------------ | ------------ | ------------- | ------------ |
+| Delhi                     | 0.78 s | 7.42 s | 9            | 8            | 2             | limited      |
+| Manali (Himachal Pradesh) | 0.71 s | 7.47 s | 7            | 8            | 2             | limited      |
+| Guwahati                  | 0.23 s | 7.39 s | 6            | 8            | 2             | limited      |
+
+[Machine-readable measurements](benchmark-2026-10-22.json) include timestamps, provider and status. These were three sequential engine calls without the completed-scan cache; provider-side caching may still affect timings. Lookup is measured separately from the scan. Network proxy support was enabled for this workspace. This is a small sample, not a percentile benchmark, production load test or browser-to-host SLA.
+
+Every result provided local links and two days of forecast data. Guwahati returned a source-supported transport report for the trip window. Delhi and Manali returned useful leads without establishing a current disruption. All three explicitly reported limited web coverage; the system did not turn missing evidence into an all-clear.
+
+Live review during development exposed news-office datelines, ambiguous Manali locations, generic directory pages, navigation-only extractions, dropped publication metadata, repeated headlines and stale disruptions. Regression cases now cover those failure patterns. This targeted review is not an independent incident-detection or factual-accuracy study.
+
+## Reproduce
+
+Configure the web-search credential in your local environment, then run:
+
+```sh
+npm run benchmark:live -- --live
+# Or specify places, including the state for ambiguous names:
+npm run benchmark:live -- --live Delhi "Manali, Himachal Pradesh" Guwahati
+```
+
+The explicit `--live` flag opts into real requests and account quota use. Reports are written to ignored `artifacts/benchmarks/`; normal CI never calls paid providers. Each report retains source links, publication metadata, evidence status, stage durations and failures so speed can be reviewed alongside usefulness. Do not publish private travel plans or credentials with diagnostic output.
+
+## Automated verification
+
+The completed change passes 58 Node tests, 13 Playwright browser tests, the production build and formatting checks. Fixtures cover:
+
+- Wrong places/states, ambiguous names, unrelated news and invalid URLs.
+- Fabricated citations, altered quotations, cherry-picked negation, resolved/historical reports and stale dates.
+- Explicit dates, cautious publication-year inference, future trips and missing forecast days.
+- Duplicate reports, bounded scores and unsupported model narratives.
+- Slow/failed providers, concurrent collection, cancellation, queue cleanup, bounded bodies and shared jobs.
+- Weather-only responses without search credentials; useful leads when extraction fails; unavailable results excluded from cache.
+- Location confirmation, API input limits, quotas, request headers and saved-plan behavior.
+- Sparse-result briefings, mobile widths, themes, filters, downloads and printing.
+
+The provider fallback test simulates Gemini quota failure and Groq success. It does not validate live model access, response quality or paid-account limits. Unit latency checks use shortened deterministic budgets; live samples use the actual twenty-second budget.
+
+## What still needs validation before a public safety claim
+
+Accuracy requires an independently labelled set of current incidents and non-incidents, including local-language reporting, small towns, ambiguous place names, resolved events and future trips. Measure precision and missed incidents separately; a low alert count alone is not evidence of accuracy. Quotation matching establishes what a page said, not that the page is true or the situation remains active.
+
+Search indexing and extraction can miss genuine reports. Geographic/topic/date rules are deliberately conservative, and English-focused retrieval limits coverage. Forecasts remain model-derived. A public deployment additionally needs live checks with its actual AI account, hosting topology and representative concurrent traffic; cold starts are outside the engine's processing budget. Commercial weather rights are required for an ad-funded service, as described in the deployment guide.

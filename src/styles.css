@@ -2451,3 +2451,53 @@ input::placeholder {
     margin-bottom: 16px;
   }
 }
+
+.trip-highlights {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.2rem;
+  margin-block: 1.5rem;
+}
+.trip-highlights article,
+.trip-lead,
+.trip-next-steps article {
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.trip-context p {
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.trip-context h3,
+.trip-context h4 {
+  margin: 0 0 0.65rem;
+}
+.trip-context p,
+.trip-lead .source-row {
+  margin: 0.6rem 0 0;
+}
+.trip-leads,
+.trip-next-steps {
+  margin-top: 2rem;
+}
+.trip-lead,
+.trip-next-steps article {
+  margin-top: 1rem;
+}
+.trip-context .lead-reason {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.trip-next-steps a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--ink);
+  font-weight: 700;
+}
+@media (max-width: 760px) {
+  .trip-highlights {
+    grid-template-columns: 1fr;
+  }
+}

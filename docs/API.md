@@ -15,14 +15,14 @@ Relevant fields include:
 | Field                                                  | Meaning                                                    |
 | ------------------------------------------------------ | ---------------------------------------------------------- |
 | `ok`, `service`                                        | Server response status and service name.                   |
-| `tinyfishConfigured`                                   | A nonempty TinyFish key value is present.                  |
-| `llmConfigured`, `geminiConfigured`, `groqConfigured`  | Nonempty assessment credentials are present.               |
+| `tinyfishConfigured`                                   | A non-placeholder TinyFish credential is present.          |
+| `llmConfigured`, `geminiConfigured`, `groqConfigured`  | Non-placeholder assessment credentials are present.        |
 | `primaryProvider`, `fallbackProvider`, `providerOrder` | Configured assessment order.                               |
 | `model`, `fallbackModel`                               | Configured/default primary model names.                    |
 | `searchLanes`, `maxWebSources`, `scanBudgetMs`         | Collection and timing settings.                            |
 | `weatherProxyMode`, `weatherProxyConfigured`           | Direct/Worker routing and whether proxy URL/token are set. |
 
-Key and token values are not returned. A configured flag can be true for an invalid key or an example placeholder.
+Key and token values are not returned. Known template placeholders are treated as missing; a configured flag can still be true for an invalid key.
 
 ## `GET /api/locations?destination=...`
 
@@ -60,7 +60,7 @@ Display the choices and let the user select one. IDs are bound to the normalized
 
 ## `POST /api/analyze`
 
-Requires a valid TinyFish key on the server and a selected ID from a lookup on the same process.
+Requires a selected ID from a lookup on the same process. A TinyFish key enables web evidence; missing/failed search still permits weather and next checks with incomplete coverage.
 
 ```json
 {
@@ -73,7 +73,7 @@ Requires a valid TinyFish key on the server and a selected ID from a lookup on t
 
 Use the same `destination` query that produced the choice, with valid dates in the intended travel window. These example dates are illustrative; update them when trying the API. Dates must exist on the calendar and the end must not precede the start. The browser prevents past-date selection; API consumers should choose appropriate dates themselves.
 
-Send `Content-Type: application/json`. The body limit is 1 MB. Do not send provider keys in browser/API payloads. Client-supplied coordinates or location objects are ignored: the server uses the stored choice and its label.
+Send `Content-Type: application/json`. The body limit is 32 KB and the trip may contain at most 90 days. Do not send provider keys in browser/API payloads. Client-supplied coordinates or location objects are ignored: the server uses the stored choice and its label.
 
 Successful response fields include:
 
@@ -91,15 +91,21 @@ Successful response fields include:
 
 Each issue contains a title, dimension, severity, score, confidence, area, summary, travel impact, evidence excerpt, and valid `sourceIds` referencing the returned evidence. Actual findings depend on collection; there is no guaranteed issue count or successful provider sequence.
 
+Version 4 adds `engineVersion`, `resultStatus` (`complete`, `partial`, `unavailable`), `highlights`, `leads` and `nextSteps`. Lead entries contain a title, excerpt, source IDs and a reason that they were not promoted to findings. Next steps contain a title, URL and detail. These remain available with empty `issues`; clients should render them rather than treating an empty issue array as a failed scan.
+
+Sources add `originalUrl`, `retrievedAt`, `publicationDateBasis`, `contentHash` and `quality` (place match, relevance, recency, reasons). Redirect URLs determine the displayed publisher. Hashes cover the retained excerpt, not an archived full document. `evidenceStatus` and `dateBasis` explain findings. Numeric confidence is legacy heuristic metadata, not calibrated accuracy.
+
+`performance` contains `budgetMs`, `elapsedMs` and per-stage status/duration. `collectedAt` records engine start; source retrieval timestamps record collection or original weather-cache retrieval. `checkedAt` records completion and remains unchanged on cache hits. `requestId` matches the `X-Request-Id` header; API responses use `Cache-Control: no-store`. Successful scans add `Server-Timing`.
+
 ### Interpreting the response
 
-- `adequate`, `limited`, and `inconclusive` describe source collection, not safety.
+- `adequate`, `limited`, and `inconclusive` describe source collection, not safety; see the [exact criteria](../DECISIONS.md#coverage-is-separate-from-findings). `resultStatus: complete` refers to web collection, not complete weather coverage or exhaustive incident detection.
 - A lane with `succeeded: true` may still have `resultCount: 0`; check both.
 - `fetched: false` on a webpage means only a search snippet/title was available. Weather API records are a different source type.
 - A government-domain badge identifies a website type, not the freshness or applicability of an advisory.
 - Publication dates come from provider metadata. Undated and old reports need verification.
-- `cached: true` means a completed result was reused within its 45-second cache window. `checkedAt` remains the original collection timestamp.
-- `shared: true` on an uncached response means the request joined an existing job. It does not get a fresh 100-second budget; `durationMs` measures this request's wait.
+- `cached: true` means a completed result was reused within its 60-second cache window. `checkedAt` remains the original collection timestamp.
+- `shared: true` on an uncached response means the request joined an existing job. It does not get a fresh 20-second budget; `durationMs` measures this request's wait.
 
 ### Daily forecast coverage
 
@@ -116,13 +122,13 @@ This illustrates partial coverage for a four-day trip ending on November 10. `fo
 
 ## Cancellation and capacity
 
-Abort the browser fetch or close its HTTP connection to stop waiting for a lookup or scan. One subscriber cancelling does not stop a shared job needed by another. The last cancellation aborts the upstream job. Failed and cancelled jobs are not cached.
+Abort the browser fetch or close its HTTP connection to stop waiting for a lookup or scan. One subscriber cancelling does not stop a shared job needed by another. The last cancellation aborts the upstream job. Failed, cancelled and wholly unavailable jobs are not cached.
 
 Defaults per Node process:
 
 | Operation       | Per-IP allowance        | Distinct active jobs | Completed cache |
 | --------------- | ----------------------- | -------------------- | --------------- |
-| Analyze         | 6 requests / 10 minutes | 3                    | 45 seconds      |
+| Analyze         | 6 requests / 10 minutes | 3                    | 60 seconds      |
 | Location lookup | 20 requests / minute    | 4                    | 9 minutes       |
 
 Shared jobs allow up to 100 waiting subscribers. Valid shared/cached requests still count toward request allowances; rate limits also apply before a capacity rejection. Invalid input and missing confirmations are rejected before starting provider work. Quotas and jobs are not coordinated across replicas; see [deployment](DEPLOYMENT.md#request-limits-and-process-state).
@@ -131,17 +137,17 @@ Shared jobs allow up to 100 waiting subscribers. Valid shared/cached requests st
 
 Errors generally contain `error` and, where supplied by the route, `code`. Do not assume every error includes a code.
 
-| HTTP  | Code, when present     | Meaning / client response                                                                                        |
-| ----- | ---------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `400` | —                      | Invalid destination, dates, or JSON. Correct the request.                                                        |
-| `400` | `LOCATION_REQUIRED`    | Missing, expired, evicted, invented, or query-mismatched location ID. Perform the lookup and confirmation again. |
-| `404` | —                      | Unknown API route.                                                                                               |
-| `413` | —                      | JSON body exceeds the configured limit.                                                                          |
-| `429` | `RATE_LIMITED`         | Client allowance or limiter capacity exceeded. Respect `Retry-After`.                                            |
-| `429` | `SCAN_CAPACITY`        | Distinct job/subscriber capacity reached; also used by the lookup manager. Respect `Retry-After`.                |
-| `503` | `MISSING_TINYFISH_KEY` | The scan route has no configured TinyFish credential. Configure it on the server.                                |
-| `504` | `SCAN_TIMEOUT`         | A scan or lookup exceeded its overall budget.                                                                    |
-| `502` | `SCAN_FAILED`          | An unhandled collection/lookup failure prevented a useful response.                                              |
-| `500` | —                      | Unexpected server error.                                                                                         |
+| HTTP  | Code, when present  | Meaning / client response                                                                                        |
+| ----- | ------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `400` | —                   | Invalid destination, dates, or JSON. Correct the request.                                                        |
+| `400` | `TRIP_TOO_LONG`     | Trip exceeds 90 days.                                                                                            |
+| `400` | `LOCATION_REQUIRED` | Missing, expired, evicted, invented, or query-mismatched location ID. Perform the lookup and confirmation again. |
+| `404` | —                   | Unknown API route.                                                                                               |
+| `413` | —                   | JSON body exceeds the configured limit.                                                                          |
+| `429` | `RATE_LIMITED`      | Client allowance or limiter capacity exceeded. Respect `Retry-After`.                                            |
+| `429` | `SCAN_CAPACITY`     | Distinct job/subscriber capacity reached; also used by the lookup manager. Respect `Retry-After`.                |
+| `504` | `SCAN_TIMEOUT`      | A scan or lookup exceeded its overall budget.                                                                    |
+| `502` | `SCAN_FAILED`       | An unhandled collection/lookup failure prevented a useful response.                                              |
+| `500` | —                   | Unexpected server error.                                                                                         |
 
-HTTP 429 responses include `Retry-After` as seconds. Partial provider failures can instead produce a successful, limited/inconclusive response with warnings and fallback metadata; HTTP 200 is not proof of complete coverage. Provider-authentication failures are not automatically equivalent to the server's missing-key error.
+HTTP 429 responses include `Retry-After` as seconds. Partial provider failures can instead produce a successful, limited/inconclusive response with warnings and fallback metadata; HTTP 200 is not proof of complete coverage. Missing credentials and provider authentication failures appear as failed lane diagnostics; they do not fabricate successful searches.

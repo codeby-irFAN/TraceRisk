@@ -1,6 +1,6 @@
 {
   "name": "tracerisk-domestic-travel-dashboard",
-  "version": "3.2.0",
+  "version": "4.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,10 +10,11 @@
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "node --test",
-    "format": "prettier --write .github e2e playwright.config.js server src tests vite.config.js package.json index.html render.yaml .prettierrc.json",
-    "format:check": "prettier --check .github e2e playwright.config.js server src tests vite.config.js package.json index.html render.yaml .prettierrc.json",
+    "format": "prettier --write .github e2e playwright.config.js scripts server src tests vite.config.js package.json index.html render.yaml .prettierrc.json",
+    "format:check": "prettier --check .github e2e playwright.config.js scripts server src tests vite.config.js package.json index.html render.yaml .prettierrc.json",
     "server:watch": "node --watch server/index.js",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "benchmark:live": "node scripts/benchmark-live.mjs"
   },
   "dependencies": {
     "concurrently": "^9.2.0",

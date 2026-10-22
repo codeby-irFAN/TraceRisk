@@ -52,7 +52,7 @@ The interface uses an ivory, forest-green, and terracotta travel-journal theme w
 7. Filter findings and search the evidence, then download the complete briefing or print the current view.
 8. Explain the [score formula](DECISIONS.md#risk-scoring), provider fallback, and the [automated checks](CONTRIBUTING.md#validation).
 
-A live demo requires a valid TinyFish key, working geocoding/forecast access, and any chosen AI credentials. Health indicators report configuration, not verified upstream success. If live collection fails, demonstrate the error honestly and describe fixture-based regression tests separately.
+A live web-evidence demo requires a valid TinyFish key and working geocoding/forecast access. AI quotation selection is optional. Version 4 runs within a twenty-second server budget and preserves forecasts, source leads and next checks when providers are slow. Health indicators report configuration, not verified upstream success. If live collection fails, demonstrate the error honestly and describe fixture-based regression tests separately.
 
 ## Why coverage is part of the product
 

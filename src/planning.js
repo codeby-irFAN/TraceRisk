@@ -117,6 +117,30 @@ export function buildBriefing(result) {
       issue.travelerImpact || '',
       `Sources: ${(issue.sourceIds || []).join(', ')}`,
     );
+    if (issue.dateBasis === 'event-dates-with-publication-year')
+      lines.push(
+        'The event year is inferred from the report’s publication date.',
+      );
+    if (issue.dateBasis === 'recent-report-recheck-before-travel')
+      lines.push(
+        'Recent report; confirm whether it still applies before travelling.',
+      );
+  }
+  if (result.leads?.length) {
+    lines.push('', 'LOCAL REPORTS TO REVIEW (not established disruptions)');
+    for (const lead of result.leads)
+      lines.push(
+        '',
+        lead.title,
+        lead.excerpt,
+        lead.reason,
+        `Sources: ${(lead.sourceIds || []).join(', ')}`,
+      );
+  }
+  if (result.nextSteps?.length) {
+    lines.push('', 'BEFORE YOU LEAVE');
+    for (const step of result.nextSteps)
+      lines.push(`${step.title}: ${step.detail}\n${step.url}`);
   }
   lines.push('', 'REVIEWED SOURCES');
   for (const source of result.sources || [])

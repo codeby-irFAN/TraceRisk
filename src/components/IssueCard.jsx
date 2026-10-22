@@ -33,11 +33,21 @@ export default function IssueCard({ issue, sources, checkedAt }) {
             {issue.severity}
           </span>
           <span className="confidence-tag">
-            {Math.round((issue.confidence || 0) * 100)}% confidence
+            {issue.evidenceStatus || 'Reported lead'}
           </span>
         </div>
         <h3>{issue.title}</h3>
         <p className="issue-summary">{issue.summary}</p>
+        {issue.dateBasis === 'recent-report-recheck-before-travel' && (
+          <p className="lead-reason">
+            Recent report; confirm whether it still applies before travelling.
+          </p>
+        )}
+        {issue.dateBasis === 'event-dates-with-publication-year' && (
+          <p className="lead-reason">
+            The event year is inferred from the report’s publication date.
+          </p>
+        )}
         {issue.area && (
           <div className="issue-area">
             <MapPin size={12} /> {issue.area}
@@ -49,7 +59,7 @@ export default function IssueCard({ issue, sources, checkedAt }) {
             <p>{issue.travelerImpact}</p>
           </div>
         )}
-        {issue.evidence && (
+        {issue.evidence && !issue.summary?.includes(issue.evidence) && (
           <blockquote className="evidence-quote">“{issue.evidence}”</blockquote>
         )}
         <div className="source-row">

@@ -1,93 +1,78 @@
 # Engineering decisions
 
-This document describes the implemented behavior on `main`, including the planning workspace and the backend controls. It records tradeoffs rather than claiming that the prototype is a calibrated safety system. Operational instructions are in the [deployment guide](docs/DEPLOYMENT.md); the request contract is in the [API reference](docs/API.md).
+Version 4 replaces the slow collection/assessment path with bounded parallel retrieval and a source-verification layer. This describes implemented behavior, not a certification of factual accuracy. See [API](docs/API.md), [deployment](docs/DEPLOYMENT.md), and [evaluation](docs/EVALUATION.md).
 
 ## Product scope
 
-TraceRisk is a domestic India travel-awareness tool. It surfaces evidence-backed leads and collection limitations for a place and date window. It must not turn missing data, a failed scan, an empty issue list, or a zero score into a guarantee of safety. Model weather signals must remain distinct from official meteorological warnings.
+TraceRisk supports travel planning within India. Every scan provides a briefing, available forecasts, relevant source leads, and next checks. Missing evidence is never an all-clear; reported disruptions and model weather signals remain separate. A source quotation can be checked against a page without independently proving the page's claim.
 
 ## Confirm the place before collecting trip evidence
 
-`GET /api/locations` resolves Indian locations through Open-Meteo. The UI requires a user selection even if only one choice is returned. Results include city, district/state where available, country, and coordinates so similarly named places can be distinguished.
+Open-Meteo resolves Indian places; users must select the city/state even when only one choice appears. Opaque confirmation IDs are bound to the original query for ten minutes. Scans use stored coordinates and administrative context, ignoring client-supplied coordinates. IDs can expire on eviction/restart and are process-local, not authentication credentials.
 
-The server stores opaque choice IDs with their normalized lookup query and an expiry of ten minutes. `POST /api/analyze` must carry an ID associated with the same query. The server uses that stored place for both search context and weather coordinates; arbitrary coordinates in a client request are ignored. Confirmations are process-local and can be invalidated by a restart or bounded-store eviction. They are not authentication credentials or durable bookmarks.
-
-This adds a confirmation step and makes geocoding availability a prerequisite for the normal UI scan flow, but avoids silently attaching one city's forecast to a different destination.
+Search uses confirmed city/state context and known city aliases. Explicit conflicting states are rejected; known ambiguous names, including Manali and Rampur, require state evidence. Regional reports are labelled with the region rather than presented as city-specific. Heuristic place matching cannot resolve every ambiguous name; this remains an evaluation priority.
 
 ## Search breadth and extraction
 
-Eight TinyFish lanes cover roads, public transport, civil unrest, official advisories, health, crime, infrastructure, and regional news. Each starts with a targeted query. When no usable URLs remain, or certain transient targeted failures occur, it can try one broader query without the targeted freshness/domain filters. Authentication, access, and quota failures are surfaced at the lane level rather than silently treated as successful empty searches.
+Eight simultaneous TinyFish lanes cover traffic, transport, unrest, official advisories, health, crime, infrastructure, and regional travel news. Short queries omit exact trip dates, which previously excluded useful current reporting. A lane tries one broader query when the first returns no usable local travel sources or a transient failure. Authentication/quota failures do not trigger repeated retries.
 
-URLs are normalized and deduplicated. Ranking considers destination/topic relevance, source type, and publication recency. Selection prioritizes lane and publisher diversity, then relaxes publisher limits if needed to fill the candidate budget. Those publisher limits are preferences, not a guarantee of independent corroboration.
+Travel-topic and place filters reject unrelated committees, recruitment and news-office datelines. Ranking considers place, topic, official domains and freshness. Relative publication ages help ranking only; they do not establish a claim's date. URLs are normalized, tracking parameters removed, and duplicate lane provenance retained. Selection prefers lane diversity and caps each publisher at three documents. Subdomains count together; this is publisher diversity, not proof of corroboration.
 
-Up to 20 webpage candidates are extracted in parallel batches of at most ten URLs each. A snippet can remain as a lead when extraction fails, but the source must not be labelled as a fully opened page. Publication dates are provider metadata, not verified facts. Source-type checks match complete hostnames so a lookalike hostname cannot receive a government/news badge solely by containing a trusted name.
+Up to twelve pages are extracted concurrently in separate requests. One slow page cannot hold back an entire batch. Extractions preserve the original URL, final redirect URL and publication metadata. Trust badges use the final hostname. Every source records retrieval time and a SHA-256 digest of its retained evidence excerpt. The hash is an integrity/deduplication aid, not a signed archive of the full webpage. Failed extractions remain clearly labelled snippets.
 
 ## Assessment and provider fallback
 
-1. Gemini is primary when `GEMINI_API_KEY` is nonempty. `GEMINI_MODEL` overrides the current default string, `gemini-3.8-flash`.
-2. Groq is attempted when configured if Gemini is missing or fails. Its primary model defaults to `openai/gpt-oss-20b`; a distinct `GROQ_FALLBACK_MODEL` can be configured.
-3. If neither provider is configured, or configured providers cannot produce a valid assessment, deterministic review is labelled as rules-based.
+Optional Gemini (`gemini-2.5-flash` by default) selects quotations; configured Groq (`openai/gpt-oss-20b`) can take over. Neither AI is required. Each provider is attempted once within a combined 6.5-second assessment budget. With both configured, Gemini receives 3.7 seconds and Groq 2.5; a sole provider receives six seconds. Model overrides must be available to the actual account. The removed `GROQ_FALLBACK_MODEL` setting is no longer used.
 
-Gemini allows one retry for transient server/network/timeout failures, but does not retry HTTP 429 quota errors. Groq allows one transient retry on its primary model; a configured alternate can be tried for an unavailable model or exhausted transient failures. Quota/authentication/malformed-request errors do not trigger a retry loop. Each provider receives a bounded evidence selection, not necessarily every full page collected.
+AI receives bounded source excerpts as untrusted data. It returns source IDs and exact quotations, not authoritative titles, narratives, scores or confidence percentages. Both AI-selected and deterministic candidate quotations pass the same checks:
 
-Prompts treat retrieved text as untrusted evidence and require citations. Assessment JSON must contain an issues array; normalized findings need valid source IDs and a positive bounded score. Duplicates are consolidated and at most ten normalized findings are returned. These checks constrain output but do not independently fact-check the model. Provider/model names and fallback metadata accompany results.
+1. The source exists and its page was extracted; snippets cannot become scored findings.
+2. The quotation occurs in retained source text. Its enclosing sentence is restored to preserve negation and qualifications.
+3. The passage contains the confirmed city/state and a recognized travel disruption.
+4. It is not explicitly negated, resolved, hypothetical or historical.
+5. Complete event dates overlap the trip, or a report published within two calendar days provides context for a trip starting within two days. A month/day can use the year closest to a recent, known publication date only within 45 days of that date; `dateBasis` explicitly identifies this inference. Unresolvable/relative event dates remain leads; recent news is not projected months ahead.
 
-Default identifiers are documented to match the code, not endorsed as universally available models. Model access, schemas, pricing, and quotas need verification for the actual provider account.
+Repeated passages from the same document, category and area collapse to one report, preferring a longer passage with event dates. Different publications may still describe the same incident; the issue count is a count of reports, not unique incidents. Server templates preserve source words and generate bounded heuristic severity. Unsupported or undated reports still appear as reviewable leads when relevant. This favors precision over recall: valid reports can remain unscored when extraction, language, date or location checks are inconclusive. It does not solve misinformation in an otherwise well-formed source.
 
 ## Weather and date coverage
 
-The confirmed place feeds daily forecast and river-discharge requests while web search runs. The daily request asks for a 16-day horizon; the flood request asks for 210 days. These are requested horizons, not guarantees that usable data will be returned for every location or date.
+Forecast and flood collection start alongside search; page extraction does not wait for weather. Open-Meteo requests run through separate per-host gates of four concurrent requests, with a five-minute cache of at most 200 entries. They have six-second timeouts and no retry loop. Cached records keep their original retrieval timestamp. An optional authenticated external Worker preserves the existing endpoint contract.
 
-Only usable daily records inside the selected trip window count. Out-of-window dates are never substituted to make a forecast appear available. Daily coverage reports the total trip days, matched days, `complete`/`partial`/`unavailable` status, and contiguous missing date ranges. Missing ranges are derived from the returned records without allocating a day-by-day list for arbitrarily long trips.
-
-Daily forecasts and river-discharge availability are separate. River flow is nearest-grid model output and cannot establish that a particular road or local river will flood. Open-Meteo requests are serialized with a 1.5-second gap and a bounded ten-minute response cache; rate-limit backoff remains subject to the calling job's budget. An optional external Worker can provide the same three supported routes.
-
-Deterministic signals screen precipitation, gusts, heat, snowfall, thunderstorms, and rising river discharge. These are operational thresholds, not official warning criteria. Weather issues merge with valid assessed issues, keeping a stronger deterministic signal from being suppressed by an invalid or weaker duplicate.
+Daily requests ask for sixteen forecast days and flood requests for 210 days. Returned availability is what matters. Only usable records inside the trip window count; missing daily dates remain visible. Nearest-grid river flow cannot establish flooding on a particular road or river reach. Existing deterministic thresholds for precipitation, wind, heat, snow, thunderstorms and river rise remain screening heuristics, not official warnings.
 
 ## Coverage is separate from findings
 
-The implementation distinguishes web evidence from weather records. A lane that responds successfully with zero usable results still counts as having responded; inspect result counts as well as lane success totals.
+`coverageStatus` describes web collection:
 
-Coverage currently follows these rules in order:
+- `adequate`: at least four recently dated, fetched, relevant pages from three publishers and three distinct evidence hashes; at least six responding lanes, four with results.
+- `limited`: some relevant web evidence, but the above criteria are not met.
+- `inconclusive`: no relevant web evidence.
 
-1. No selected web sources, no destination/topic-relevant web sources, or fewer than four successful lanes makes coverage `inconclusive`.
-2. Otherwise, no full pages without date-relevant weather, or fewer than two relevant web sources, yields `limited` when date-relevant weather exists and `inconclusive` otherwise.
-3. Otherwise, at least six successful lanes and at least `min(6, selected web source count)` opened pages yields `adequate`.
-4. Remaining cases are `limited`.
-
-These are collection heuristics. Even `adequate` does not establish complete coverage or a safe destination. Daily forecast gaps are communicated separately and remain visible when signal/source filters are used.
+`resultStatus` is `complete` for adequate web coverage, `partial` when any sources were collected, and `unavailable` when none were collected. Complete does not mean every hazard was found or every forecast date is covered. All three states include next checks. Weather coverage is reported independently; inspect it even for complete results.
 
 ## Risk scoring
 
-`computeOverallScore(issues)` calculates:
+The overall score is zero with no findings; otherwise it is the highest supported issue score. Additional articles cannot inflate a score by repeating an incident. Web categories use fixed values: movement restrictions 64, environmental advisories 60, civil disruption 55, transport 52, health/infrastructure 45, visitor/crime advisories 28. Weather retains its documented code thresholds.
 
-```text
-0, when there are no normalized issues
-otherwise min(100, round(highest issue score + 4 × (number of issues − 1)))
-```
-
-For results with findings, the overall bands are:
-
-| Score    | Overall label |
-| -------- | ------------- |
-| Below 35 | Low signal    |
-| 35–59    | Elevated      |
-| 60–79    | High          |
-| 80–100   | Critical      |
-
-These labels are heuristic triage bands, not probabilities of harm, validated risk forecasts, or government classifications. Per-issue confidence and source freshness are separate metadata; neither is a direct term in the overall formula. Individual issue severity may come from the assessed issue rather than the overall-score band.
-
-Rules-based starting scores are 68 for environmental alerts, 64 for civil unrest, 52 for transport, 48 for standing restrictions, 44 for health, and 28 for microcrime. Without a selected-date/current-time cue, a fallback issue's score is capped at 38. These constants and the independent weather thresholds should change only with corresponding documentation and regression coverage.
+Overall bands are below 35: low signal; 35–59: elevated; 60–79: high; 80–100: critical. They are triage heuristics, not probabilities or calibrated safety ratings. With no findings the UI shows evidence/coverage status instead of calling a destination safe. Legacy numeric confidence remains in the API for compatibility; cards show evidence status rather than an unjustified accuracy percentage.
 
 ## Budgets, shared work, and cancellation
 
-A distinct scan receives a 100-second overall budget. Stage limits include seven seconds per search request, twenty seconds per extraction batch, and twelve seconds per AI request. Location lookup jobs have a separate 25-second budget. Stage retries, provider fallbacks, and weather queueing do not extend the overall job budget. The browser allows 108 seconds for its request; Vite's API proxy timeout is 110 seconds.
+| Work                               | Budget                                                        |
+| ---------------------------------- | ------------------------------------------------------------- |
+| Scan manager                       | 20 seconds                                                    |
+| Engine, including result assembly  | 19.5 seconds                                                  |
+| Eight concurrent search lanes      | 6 seconds each, including up to two 2.7-second attempts       |
+| Concurrent extraction              | 5 seconds total, 4.5 seconds per request including queue time |
+| Weather, concurrent with retrieval | 8 seconds total                                               |
+| Optional assessment                | 6.5 seconds total                                             |
+| Confirmed-location lookup          | 8 seconds                                                     |
 
-Identical requests for the same confirmed place and dates share one active job. The job's budget begins when it starts, not when a later subscriber joins. Each request subscribes independently: cancelling one does not stop work needed by others; cancelling the last aborts upstream work. Failed or cancelled jobs do not enter the completed-result cache. A cached scan retains its original collection timestamp; a short request duration does not mean new evidence was collected.
+The worst planned sequential stages total 17.5 seconds, leaving time for assembly. Browser and development proxy timeouts are 25 and 30 seconds. Network transit, hosting cold starts, saturation and event-loop stalls can still increase perceived time; the budget is not a worldwide latency SLA.
 
-Defaults are six scan requests per client IP per ten minutes, three distinct scans at once, and up to 100 subscribers per job. Completed scans are cached for 45 seconds. Lookups have separate limits of twenty requests per IP per minute, four distinct jobs, and nine-minute completed-result caching. Shared and cached requests still consume the client's request allowance. HTTP 429 responses include retry guidance.
+Timeouts cover queueing, response-body reads and cancellation, not just initial HTTP headers. JSON responses are capped at 2 MB (100 KB for AI). Failed stages preserve successful stages. The last disconnected subscriber cancels upstream work; another subscriber can keep a shared job alive. Failed, cancelled and wholly unavailable results are not cached. Partial results may be reused for sixty seconds.
 
-All limits, pending jobs, caches, and confirmations are in memory. They reset on restart and do not coordinate replicas. IP limits depend on correctly configured trusted proxies. This keeps the prototype simple; multiple replicas need a shared limiter/job store or appropriate gateway controls.
+Defaults remain six scans per IP per ten minutes, three active scans and at most 100 subscribers per job. Lookups allow twenty requests/minute and four active jobs, with a nine-minute result cache. State is bounded, in memory, and lost at restart. Multi-instance deployments need consistent routing/shared confirmation state plus shared quota controls. Request IDs, stage timings and provider outcomes support diagnosis without storing credentials.
 
 ## Interface and local planning state
 

@@ -83,7 +83,7 @@ export async function findDestinationLocations(destination) {
       const data = await openMeteoJson(
         url,
         {
-          headers: { 'User-Agent': 'TraceRisk-App/3.2.0' },
+          headers: { 'User-Agent': 'TraceRisk-App/4.0.0' },
         },
         GEOCODING_TIMEOUT_MS,
       );

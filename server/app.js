@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import {
   REQUEST_BUDGET_MS,
@@ -11,6 +12,10 @@ import {
   SCAN_RATE_LIMIT,
   SCAN_RATE_WINDOW_MS,
   TRUST_PROXY_HOPS,
+  DEFAULT_GEMINI_MODEL,
+  DEFAULT_GROQ_MODEL,
+  ENGINE_VERSION,
+  hasCredential,
 } from './config.js';
 import { analyzeTrip } from './analyze.js';
 import { cleanText, isDate } from './utils.js';
@@ -25,6 +30,13 @@ export function createApp({
   locationOptions = {},
 } = {}) {
   const app = express();
+  app.disable('x-powered-by');
+  app.use('/api', (_req, res, next) => {
+    res.set('X-Request-Id', randomUUID());
+    res.set('Cache-Control', 'no-store');
+    res.set('X-Content-Type-Options', 'nosniff');
+    next();
+  });
   if (TRUST_PROXY_HOPS) app.set('trust proxy', TRUST_PROXY_HOPS);
   const scans = createScanManager({
     run: async (args) => ({
@@ -36,7 +48,8 @@ export function createApp({
     rateWindowMs: SCAN_RATE_WINDOW_MS,
     cacheTtlMs: CACHE_TTL_MS,
     budgetMs: REQUEST_BUDGET_MS,
-    timeoutMessage: 'The scan exceeded the 100-second limit. Please try again.',
+    timeoutMessage:
+      'The scan exceeded the 20-second processing limit. Please try again.',
     ...scanOptions,
   });
   const lookups = createScanManager({
@@ -48,40 +61,42 @@ export function createApp({
     rateWindowMs: 60_000,
     cacheTtlMs: 9 * 60_000,
     maxCacheEntries: 100,
-    budgetMs: 25_000,
+    budgetMs: 8_000,
     timeoutMessage:
       'Location lookup timed out. Try again with a city and state.',
     ...locationOptions,
   });
-  app.use(express.json({ limit: '1mb' }));
+  app.use(express.json({ limit: '32kb' }));
 
   app.get('/api/health', (_req, res) => {
     res.json({
       ok: true,
       service: 'TraceRisk API',
-      tinyfishConfigured: Boolean(process.env.TINYFISH_API_KEY),
-      llmConfigured: Boolean(
-        process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY,
-      ),
-      geminiConfigured: Boolean(process.env.GEMINI_API_KEY),
-      groqConfigured: Boolean(process.env.GROQ_API_KEY),
-      primaryProvider: process.env.GEMINI_API_KEY
+      engineVersion: ENGINE_VERSION,
+      tinyfishConfigured: hasCredential('TINYFISH_API_KEY'),
+      llmConfigured:
+        hasCredential('GEMINI_API_KEY') || hasCredential('GROQ_API_KEY'),
+      geminiConfigured: hasCredential('GEMINI_API_KEY'),
+      groqConfigured: hasCredential('GROQ_API_KEY'),
+      primaryProvider: hasCredential('GEMINI_API_KEY')
         ? 'Google Gemini'
-        : process.env.GROQ_API_KEY
+        : hasCredential('GROQ_API_KEY')
           ? 'Groq (Gemini not configured)'
           : 'Rules-based only',
       fallbackProvider:
-        process.env.GEMINI_API_KEY && process.env.GROQ_API_KEY ? 'Groq' : null,
+        hasCredential('GEMINI_API_KEY') && hasCredential('GROQ_API_KEY')
+          ? 'Groq'
+          : null,
       providerOrder:
-        process.env.GEMINI_API_KEY && process.env.GROQ_API_KEY
+        hasCredential('GEMINI_API_KEY') && hasCredential('GROQ_API_KEY')
           ? ['Gemini', 'Groq']
-          : process.env.GEMINI_API_KEY
+          : hasCredential('GEMINI_API_KEY')
             ? ['Gemini']
-            : process.env.GROQ_API_KEY
+            : hasCredential('GROQ_API_KEY')
               ? ['Groq']
               : ['Rules'],
-      model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
-      fallbackModel: process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
+      model: process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
+      fallbackModel: process.env.GROQ_MODEL || DEFAULT_GROQ_MODEL,
       searchLanes: 8,
       maxWebSources: MAX_WEB_SOURCES,
       scanBudgetMs: REQUEST_BUDGET_MS,
@@ -158,11 +173,10 @@ export function createApp({
         error:
           'Choose valid travel dates. The end date must not be before the start date.',
       });
-    if (!process.env.TINYFISH_API_KEY)
-      return res.status(503).json({
-        error:
-          'Live updates are unavailable. The server needs a TinyFish API key.',
-        code: 'MISSING_TINYFISH_KEY',
+    if ((Date.parse(endDate) - Date.parse(startDate)) / 86_400_000 > 89)
+      return res.status(400).json({
+        error: 'Choose a trip of at most 90 days.',
+        code: 'TRIP_TOO_LONG',
       });
     const location = locationResolver.get(req.body.locationId, destination);
     if (!location)
@@ -191,7 +205,12 @@ export function createApp({
         },
         { client: req.ip, signal: client.signal },
       );
-      return res.json({ ...result, durationMs: Date.now() - startedAt });
+      res.set('Server-Timing', `scan;dur=${Date.now() - startedAt}`);
+      return res.json({
+        ...result,
+        requestId: res.get('X-Request-Id'),
+        durationMs: Date.now() - startedAt,
+      });
     } catch (error) {
       if (!client.signal.aborted) return sendFailure(res, error);
     } finally {

@@ -86,7 +86,7 @@ export async function fetchOpenMeteoHazards(
     openMeteoJson(
       forecastUrl,
       {
-        headers: { 'User-Agent': 'TraceRisk-App/3.2.0' },
+        headers: { 'User-Agent': 'TraceRisk-App/4.0.0' },
       },
       OPEN_METEO_TIMEOUT_MS,
     ),
@@ -94,7 +94,7 @@ export async function fetchOpenMeteoHazards(
     openMeteoJson(
       floodUrl,
       {
-        headers: { 'User-Agent': 'TraceRisk-App/3.2.0' },
+        headers: { 'User-Agent': 'TraceRisk-App/4.0.0' },
       },
       OPEN_METEO_TIMEOUT_MS,
     ),
@@ -181,7 +181,7 @@ export async function fetchOpenMeteoHazards(
         text: cleanText(forecastText, 8500),
         fetched: true,
         group: 'weather-api',
-        publishedAt: new Date().toISOString(),
+        publishedAt: response._traceRiskRetrievedAt || new Date().toISOString(),
         trust: 'Weather forecast API (model-derived)',
         dateRelevant: true,
       };
@@ -256,7 +256,7 @@ export async function fetchOpenMeteoHazards(
         text: cleanText(floodText, 8500),
         fetched: true,
         group: 'weather-api',
-        publishedAt: new Date().toISOString(),
+        publishedAt: response._traceRiskRetrievedAt || new Date().toISOString(),
         trust: 'Flood forecast API (model-derived)',
         dateRelevant: true,
       };

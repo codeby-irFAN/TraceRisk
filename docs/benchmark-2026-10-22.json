@@ -1,0 +1,49 @@
+{
+  "engineVersion": "4.0.0",
+  "measuredAt": "2026-10-22T12:14:28.555Z",
+  "method": "Sequential engine calls; no completed-scan cache; weather cache may be warm. Lookup measured separately. No independent factual accuracy measurement.",
+  "results": [
+    {
+      "destination": "Delhi, National Capital Territory of Delhi, India",
+      "lookupMs": 784,
+      "scanMs": 7419,
+      "withinBudget": true,
+      "resultStatus": "partial",
+      "coverage": "limited",
+      "pagesFetched": 9,
+      "relevantSources": 12,
+      "issues": 0,
+      "leads": 8,
+      "forecastDays": 2,
+      "provider": "Rules"
+    },
+    {
+      "destination": "Manali, Kullu, Himachal Pradesh, India",
+      "lookupMs": 714,
+      "scanMs": 7466,
+      "withinBudget": true,
+      "resultStatus": "partial",
+      "coverage": "limited",
+      "pagesFetched": 7,
+      "relevantSources": 10,
+      "issues": 0,
+      "leads": 8,
+      "forecastDays": 2,
+      "provider": "Rules"
+    },
+    {
+      "destination": "Guwahati, Kamrup Metropolitan District, Assam, India",
+      "lookupMs": 227,
+      "scanMs": 7395,
+      "withinBudget": true,
+      "resultStatus": "partial",
+      "coverage": "limited",
+      "pagesFetched": 6,
+      "relevantSources": 12,
+      "issues": 1,
+      "leads": 8,
+      "forecastDays": 2,
+      "provider": "Rules"
+    }
+  ]
+}

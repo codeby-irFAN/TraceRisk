@@ -8,7 +8,7 @@ TraceRisk turns local reports, official advisories, and forecast data into a sou
 
 > TraceRisk is a prototype for travel awareness, not an official safety rating, emergency service, or guarantee of safety. Confirm important conditions with official authorities and transport operators.
 
-[Demo recording](https://drive.google.com/file/d/1RIJOVODbjnc7rzDPaioiRQqtznZLq5oE/view?usp=drivesdk) · [Engineering decisions](DECISIONS.md) · [API](docs/API.md) · [Deployment](docs/DEPLOYMENT.md) · [Contributing](CONTRIBUTING.md) · [Azinhack brief](AZINHACK_SUBMISSION.md)
+[Demo recording](https://drive.google.com/file/d/1RIJOVODbjnc7rzDPaioiRQqtznZLq5oE/view?usp=drivesdk) · [Engineering decisions](DECISIONS.md) · [API](docs/API.md) · [Deployment](docs/DEPLOYMENT.md) · [Evaluation](docs/EVALUATION.md) · [Contributing](CONTRIBUTING.md) · [Azinhack brief](AZINHACK_SUBMISSION.md)
 
 Use this README for the current workflow; the recording is a separate demonstration.
 
@@ -19,6 +19,7 @@ Use this README for the current workflow; the recording is a separate demonstrat
 - **Review eight search categories:** traffic and roads, public transport, civil unrest, official advisories, health, crime, infrastructure, and regional news.
 - **Inspect the evidence:** open source links, distinguish full pages from snippets, see government-domain and publication-date badges, and search or filter the source list.
 - **Understand the weather window:** see daily forecasts and modelled river flow, the number of trip days covered, and the exact dates without daily forecasts.
+- **Get useful results from sparse searches:** review local source leads, date-matched weather, and official next checks even when no disruption is established.
 - **Explore findings:** filter signals by category and sort them by score or confidence while keeping coverage warnings visible.
 - **Keep your briefing:** download the complete findings and source links as text, or print the current filtered view with its limitations.
 - **Control the experience:** cancel a lookup or scan, switch between daylight and evening themes, and use the responsive interface with keyboard navigation and reduced-motion support.
@@ -68,14 +69,14 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }
 
 Edit `.env` before starting:
 
-| Setting                                             | Needed for                                                                       |
-| --------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `TINYFISH_API_KEY`                                  | Required to start a destination scan: live search and webpage extraction.        |
-| `GEMINI_API_KEY`                                    | Optional primary AI review.                                                      |
-| `GROQ_API_KEY`                                      | Optional fallback AI review; can also run without Gemini.                        |
-| `GEMINI_MODEL`, `GROQ_MODEL`, `GROQ_FALLBACK_MODEL` | Optional model overrides; see [configuration](docs/DEPLOYMENT.md#configuration). |
+| Setting                      | Needed for                                                                          |
+| ---------------------------- | ----------------------------------------------------------------------------------- |
+| `TINYFISH_API_KEY`           | Live search and webpage extraction; without it, weather and next checks still work. |
+| `GEMINI_API_KEY`             | Optional primary AI review.                                                         |
+| `GROQ_API_KEY`               | Optional fallback AI review; can also run without Gemini.                           |
+| `GEMINI_MODEL`, `GROQ_MODEL` | Optional model overrides; see [configuration](docs/DEPLOYMENT.md#configuration).    |
 
-Replace required placeholders with valid credentials. Leave unused optional credentials blank; a nonempty placeholder is reported as configured even though it cannot authenticate. Get keys through [TinyFish](https://agent.tinyfish.ai/), [Google AI Studio](https://aistudio.google.com/apikey), or [Groq Console](https://console.groq.com/keys). Keep real credentials in local or deployment settings, never in Git.
+Replace required placeholders with valid credentials. Leave unused optional credentials blank; known placeholder values are treated as missing. Configuration flags still do not validate real credentials. Get keys through [TinyFish](https://agent.tinyfish.ai/), [Google AI Studio](https://aistudio.google.com/apikey), or [Groq Console](https://console.groq.com/keys). Keep real credentials in local or deployment settings, never in Git.
 
 Open-Meteo geocoding is needed to confirm a destination. Its public non-commercial geocoding, forecast, and flood endpoints do not require an API key. The optional external proxy is described in the [deployment guide](docs/DEPLOYMENT.md#optional-cloudflare-worker-proxy).
 
@@ -87,7 +88,7 @@ The frontend starts at `http://127.0.0.1:5173`; Express defaults to port `8787`.
 
 1. Enter a destination and travel dates; shortcuts fill the form without starting a request.
 2. Select **Find destination**, then choose the correct location.
-3. Select **Check my trip**. A scan can take up to 100 seconds; **Cancel scan** stops waiting.
+3. Select **Check my trip**. The backend has a 20-second processing budget; slow providers yield partial results. Hosting cold starts and network time are additional. **Cancel scan** stops waiting.
 4. Read the source-coverage warning, findings, weather gaps, and supporting links.
 5. Download the complete briefing or print the current view. Recheck official information close to departure.
 
@@ -101,17 +102,17 @@ Trip planner
   └── POST /api/analyze → request limits, shared work, and short-lived cache
        ├── 8 TinyFish search lanes + broader retry where appropriate
        ├── Open-Meteo forecasts for the confirmed coordinates
-       ├── Deduplicate and select up to 20 webpage candidates
-       ├── Fetch pages in batches of up to 10 URLs
-       ├── Gemini → optional Groq → labelled rules-based fallback
-       └── Cited signals + source coverage + daily forecast gaps
+       ├── Deduplicate and select up to 12 relevant webpages
+       ├── Extract each page independently in parallel
+       ├── Optional Gemini → Groq quotation selection + deterministic evidence checks
+       └── Checked quotations + useful source leads + forecasts + next checks
 ```
 
-Gemini is primary when configured; Groq is optional, and rules-based assessment remains available without either AI key. Weather thresholds supplement the assessment. Default model identifiers are implementation settings, not a guarantee that a provider currently offers them to every account.
+Source-supported findings require fetched text, a matching place and date evidence. AI cannot invent the displayed facts or choose their scores. Gemini is primary when configured; Groq is optional, and rules-based assessment remains available without either AI key. Weather thresholds supplement the assessment. Default model identifiers are implementation settings, not a guarantee that a provider currently offers them to every account.
 
 Collection status is `adequate`, `limited`, or `inconclusive`. These describe evidence coverage, not destination safety. A score of zero or an empty issue list is not an all-clear. The heuristic overall score and its limitations are explained in [DECISIONS.md](DECISIONS.md#risk-scoring).
 
-By default, scan protection allows six requests per client IP per ten minutes and three distinct concurrent scans per Node process. Identical requests can share provider work, and completed results are cached for 45 seconds. These controls, including proxy/IP assumptions and multi-instance limitations, are detailed in [deployment](docs/DEPLOYMENT.md#request-limits-and-process-state).
+By default, scan protection allows six requests per client IP per ten minutes and three distinct concurrent scans per Node process. Identical requests can share provider work, and completed results are cached for 60 seconds. These controls, including proxy/IP assumptions and multi-instance limitations, are detailed in [deployment](docs/DEPLOYMENT.md#request-limits-and-process-state).
 
 ## Development and checks
 
@@ -127,6 +128,14 @@ Run the build before browser tests; they use the built frontend and a local serv
 
 [GitHub Actions](.github/workflows/ci.yml) runs these checks on pushes and pull requests. See [CONTRIBUTING.md](CONTRIBUTING.md) for scripts, browser setup, and change-specific validation.
 
+To measure real provider performance separately from fixture tests:
+
+```sh
+npm run benchmark:live -- --live
+```
+
+This uses configured provider quota and writes ignored reports under `artifacts/benchmarks/`. See [evaluation](docs/EVALUATION.md) for measured examples and what they do not prove. The optional AI providers were not live-tested in this environment because no AI credentials were configured.
+
 ## Repository map
 
 | Location                                                           | Responsibility                                                              |
@@ -136,7 +145,7 @@ Run the build before browser tests; they use the built frontend and a local serv
 | `src/planning.js`, `src/hooks/useStoredState.js`                   | Plan/date helpers, text export, and browser persistence.                    |
 | `server/app.js`, `server/index.js`                                 | HTTP routes, static serving, and server startup.                            |
 | `server/analyze.js`                                                | Collection, assessment, and coverage orchestration.                         |
-| `server/search.js`, `server/assessment.js`                         | TinyFish retrieval and AI/rules review.                                     |
+| `server/search.js`, `server/evidence.js`, `server/assessment.js`   | Retrieval, source/quotation verification and optional AI selection.         |
 | `server/locations.js`, `server/weather.js`, `server/open-meteo.js` | Confirmed places, forecast signals, and weather transport/cache.            |
 | `server/scan-manager.js`, `server/http.js`                         | Rate limits, shared jobs, time budgets, retries, and cancellation.          |
 | `tests/`, `e2e/`                                                   | Node regression tests and Playwright browser tests.                         |

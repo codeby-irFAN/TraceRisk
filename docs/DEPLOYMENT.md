@@ -10,12 +10,11 @@ Run commands from the repository root. The server reads existing process variabl
 
 | Variable                 | Default / purpose                                                                                                                               |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `TINYFISH_API_KEY`       | Required for live scans; authenticates TinyFish Search and Fetch.                                                                               |
+| `TINYFISH_API_KEY`       | Required for web evidence; weather and next checks remain available without it.                                                                 |
 | `GEMINI_API_KEY`         | Optional primary AI review credential.                                                                                                          |
-| `GEMINI_MODEL`           | `gemini-3.8-flash`, the current code default identifier. Select a model available to the actual account and compatible with the request schema. |
+| `GEMINI_MODEL`           | `gemini-2.5-flash`, the current code default identifier. Select a model available to the actual account and compatible with the request schema. |
 | `GROQ_API_KEY`           | Optional fallback or standalone AI credential.                                                                                                  |
 | `GROQ_MODEL`             | `openai/gpt-oss-20b`, the current primary Groq identifier.                                                                                      |
-| `GROQ_FALLBACK_MODEL`    | Empty; optionally select a distinct alternate model.                                                                                            |
 | `OPEN_METEO_PROXY_URL`   | Empty for direct requests; optional Worker base URL.                                                                                            |
 | `OPEN_METEO_PROXY_TOKEN` | Required whenever a proxy URL is configured. Sent only by the backend to the proxy.                                                             |
 | `PORT`                   | `8787`; hosting platforms can supply their assigned port.                                                                                       |
@@ -60,6 +59,14 @@ Build tools are dev dependencies. If the host sets `NODE_ENV=production` before 
 
 In development, `npm run dev` starts backend watch mode and Vite. The Vite proxy reads the configured backend `PORT`. Do not run multiple copies against the same ports.
 
+## Latency and commercial operation
+
+The engine budgets twenty seconds per scan, after the HTTP request reaches a running process. The included free Render plan can sleep; cold starts can exceed that target before processing begins. Choose an always-running instance for predictable demonstrations or public operation. No hosting plan was purchased by this change.
+
+Open-Meteo public endpoints are for non-commercial use under the provider's applicable terms. A hotel-ad business requires an appropriate commercial weather contract and endpoint integration; the free endpoint and a proxy do not grant commercial rights. Independently validate report accuracy and multilingual coverage before advertising this as a safety assessment.
+
+In networks that mandate an HTTP proxy, supported recent Node 24 releases can use `NODE_USE_ENV_PROXY=1` with the host's existing `HTTP_PROXY`/`HTTPS_PROXY` configuration. Older runtimes may require an explicitly configured transport. Do not copy proxy credentials into Git. This cloud workspace required that flag for live checks.
+
 ## Render blueprint
 
 [render.yaml](../render.yaml) declares a Node web service with:
@@ -97,17 +104,17 @@ With both proxy variables blank, direct Open-Meteo requests are used. A configur
 
 Defaults:
 
-| Resource               | Protection                                                                    |
-| ---------------------- | ----------------------------------------------------------------------------- |
-| Scans                  | 6 requests per IP per 10 minutes; 3 distinct concurrent jobs.                 |
-| Location lookups       | 20 requests per IP per minute; 4 distinct concurrent jobs.                    |
-| Shared job             | At most 100 subscribers; a later subscriber shares the remaining job budget.  |
-| Completed scan cache   | 45 seconds, up to 100 entries.                                                |
-| Completed lookup cache | 9 minutes, up to 100 entries.                                                 |
-| Location confirmations | Up to 10 minutes, bounded to 1,000 choices.                                   |
-| Weather response cache | 10 minutes, up to 100 entries, with serialized requests and a 1.5-second gap. |
+| Resource               | Protection                                                                   |
+| ---------------------- | ---------------------------------------------------------------------------- |
+| Scans                  | 6 requests per IP per 10 minutes; 3 distinct concurrent jobs.                |
+| Location lookups       | 20 requests per IP per minute; 4 distinct concurrent jobs.                   |
+| Shared job             | At most 100 subscribers; a later subscriber shares the remaining job budget. |
+| Completed scan cache   | 60 seconds, up to 100 entries.                                               |
+| Completed lookup cache | 9 minutes, up to 100 entries.                                                |
+| Location confirmations | Up to 10 minutes, bounded to 1,000 choices.                                  |
+| Weather response cache | 5 minutes, up to 200 entries; four concurrent requests per provider host.    |
 
-Cached/shared requests still consume each client's allowance. Rate/capacity failures return HTTP 429 with `Retry-After`. A cancelled subscriber does not cancel a shared job while someone else still needs it. Cancelling the last subscriber stops upstream work; failed/cancelled results are not cached.
+Cached/shared requests still consume each client's allowance. Rate/capacity failures return HTTP 429 with `Retry-After`. A cancelled subscriber does not cancel a shared job while someone else still needs it. Cancelling the last subscriber stops upstream work; failed/cancelled and wholly unavailable results are not cached. Partial results can be reused for sixty seconds.
 
 State is per process, in memory, and lost at restart. Multiple replicas do not share quotas, active jobs, completed results, or confirmation IDs. Add shared/gateway limiting for aggregate quota protection. Confirmation across replicas additionally needs consistent routing or a shared confirmation store; otherwise a lookup ID issued by one instance can fail validation on another.
 

@@ -51,9 +51,9 @@ export function createScanManager({
   maxSubscribers = 100,
   rateLimit = 6,
   rateWindowMs = 10 * 60_000,
-  cacheTtlMs = 45_000,
+  cacheTtlMs = 60_000,
   maxCacheEntries = 100,
-  budgetMs = 100_000,
+  budgetMs = 20_000,
   timeoutMessage = 'The scan exceeded its time limit. Please try again.',
   now = Date.now,
 }) {
@@ -122,7 +122,10 @@ export function createScanManager({
             ),
           )
           .then((value) => {
-            if (!job.controller.signal.aborted) {
+            if (
+              !job.controller.signal.aborted &&
+              value.resultStatus !== 'unavailable'
+            ) {
               cache.set(key, { value, createdAt: now() });
               trimCache(cache, maxCacheEntries);
             }
