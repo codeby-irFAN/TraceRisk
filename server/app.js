@@ -33,6 +33,7 @@ export function createApp({
   locationOptions = {},
   tripStore = createTripStore(),
   tripServiceOptions = {},
+  auth = null,
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -72,12 +73,15 @@ export function createApp({
     ...locationOptions,
   });
   app.use(express.json({ limit: '32kb' }));
-  app.use('/api/auth', createAuthRouter(tripStore));
+  app.use('/api/auth', auth ? auth.router : createAuthRouter(tripStore));
+  if (auth) app.get('/auth/callback', auth.callback);
 
   app.get('/api/health', (_req, res) => {
     res.json({
       ok: true,
       service: 'TraceRisk API',
+      storageProvider: tripStore.provider || 'sqlite',
+      scheduledMonitoringAvailable: tripStore.monitoringAvailable !== false,
       engineVersion: ENGINE_VERSION,
       tinyfishConfigured: hasCredential('TINYFISH_API_KEY'),
       llmConfigured: hasCredential('GROQ_API_KEY'),
@@ -223,6 +227,7 @@ export function createApp({
       store: tripStore,
       service: tripService,
       locationResolver,
+      auth,
     }),
   );
 

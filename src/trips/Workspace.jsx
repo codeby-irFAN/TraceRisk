@@ -18,6 +18,7 @@ import TripDetails from './TripDetails';
 export default function Workspace() {
   const [user, setUser] = useState(null),
     [authLoading, setAuthLoading] = useState(true),
+    [authProvider, setAuthProvider] = useState('local'),
     [workspace, setWorkspace] = useState(null),
     [trips, setTrips] = useState([]),
     [selected, setSelected] = useState(null),
@@ -25,7 +26,11 @@ export default function Workspace() {
     [view, setView] = useState('Trips'),
     [composer, setComposer] = useState(false),
     [editing, setEditing] = useState(null),
-    [error, setError] = useState(''),
+    [error, setError] = useState(
+      new URLSearchParams(window.location.search).has('authError')
+        ? 'This email link expired or was opened in a different browser. Sign in or request a new reset link.'
+        : '',
+    ),
     [busy, setBusy] = useState(false),
     [search, setSearch] = useState(''),
     [theme, setTheme] = useState(stored('tracerisk-theme') || 'light');
@@ -33,7 +38,10 @@ export default function Workspace() {
     let active = true;
     api('/auth/session')
       .then((data) => {
-        if (active) setUser(data.user);
+        if (active) {
+          setUser(data.user);
+          setAuthProvider(data.provider || 'local');
+        }
       })
       .catch((e) => {
         if (active) setError(e.message);
@@ -238,10 +246,20 @@ export default function Workspace() {
             </button>
           </div>
         )}
+        {user &&
+          authProvider === 'supabase' &&
+          workspace &&
+          !workspace.monitoring && (
+            <p className="notice">
+              Automatic trip updates are not enabled yet. You can still check
+              each trip manually.
+            </p>
+          )}
         {authLoading ? (
           <p role="status">Opening TraceRisk…</p>
         ) : !user ? (
           <AuthPanel
+            provider={authProvider}
             onSignedIn={(user) => {
               setUser(user);
               setView('Trips');

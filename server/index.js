@@ -1,9 +1,33 @@
 import { createApp } from './app.js';
 import { createTripStore } from './trip-store.js';
-const tripStore = createTripStore({
-  filename: process.env.TRACERISK_DB_PATH || 'data/tracerisk.sqlite',
-});
-const app = createApp({ tripStore });
+import { createSupabaseStore } from './supabase-store.js';
+import { supabaseAuth } from './supabase-auth.js';
+const url = process.env.SUPABASE_URL,
+  publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
+if (Boolean(url) !== Boolean(publishableKey))
+  throw new Error('Set both SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY.');
+const useSupabase = Boolean(url && publishableKey);
+if (useSupabase && !process.env.SUPABASE_SECRET_KEY)
+  throw new Error(
+    'Set SUPABASE_SECRET_KEY in the server environment before enabling Supabase trip storage.',
+  );
+const auth = useSupabase
+  ? supabaseAuth({
+      url,
+      publishableKey,
+      siteUrl: process.env.SITE_URL || 'https://tracerisk.onrender.com',
+    })
+  : null;
+const tripStore = useSupabase
+  ? createSupabaseStore({
+      url,
+      publishableKey,
+      secretKey: process.env.SUPABASE_SECRET_KEY,
+    })
+  : createTripStore({
+      filename: process.env.TRACERISK_DB_PATH || 'data/tracerisk.sqlite',
+    });
+const app = createApp({ tripStore, auth });
 import { PORT, DEFAULT_GROQ_MODEL, hasCredential } from './config.js';
 
 const server = app.listen(PORT, '0.0.0.0');
@@ -15,7 +39,10 @@ server.on('error', (error) => {
 
 server.on('listening', () => {
   console.log(`TraceRisk server listening on port ${PORT}`);
-  if (process.env.TRIP_WATCH_ENABLED !== 'false')
+  if (
+    process.env.TRIP_WATCH_ENABLED !== 'false' &&
+    tripStore.monitoringAvailable !== false
+  )
     app.locals.tripService.start();
   console.log(
     `TinyFish: ${hasCredential('TINYFISH_API_KEY') ? 'configured' : 'missing key (.env)'}`,

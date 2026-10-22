@@ -1,6 +1,6 @@
 {
   "name": "tracerisk-domestic-travel-dashboard",
-  "version": "5.1.0",
+  "version": "5.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -17,6 +17,8 @@
     "benchmark:live": "node scripts/benchmark-live.mjs"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.118.0",
     "concurrently": "^9.2.0",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
@@ -28,6 +30,7 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.11",
     "@playwright/test": "1.64.1",
     "@vitejs/plugin-react": "^5.0.0",
     "prettier": "3.6.2",

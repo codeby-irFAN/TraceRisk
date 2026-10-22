@@ -174,10 +174,12 @@ export function createTripService({
   const jobs = new Map(),
     gate = createConcurrencyGate(3),
     scanCache = new Map();
-  let interval = null,
+  let starting = 0,
+    interval = null,
     ticking = false;
   async function inspect(target, preferences) {
     const key = JSON.stringify([
+      locationLabel(target.location),
       target.location.latitude,
       target.location.longitude,
       target.startDate,
@@ -306,14 +308,20 @@ export function createTripService({
       ...snapshotSummary(reports),
     };
   }
-  function launch(workspace, trip, kind, task) {
-    if (jobs.size >= 2)
+  async function launch(workspace, trip, kind, task) {
+    if (jobs.size + starting >= 2)
       throw tripError(
         'Two trip checks are already running. Try again shortly.',
         429,
       );
-    if (!store.claim(workspace, trip.id))
-      throw tripError('This trip is already being checked.', 409);
+    starting++;
+    let claimed;
+    try {
+      claimed = await store.claim(workspace, trip.id);
+    } finally {
+      starting--;
+    }
+    if (!claimed) throw tripError('This trip is already being checked.', 409);
     const controller = new AbortController();
     const key = `${workspace}:${trip.id}`;
     const promise = withRequestBudget(
@@ -322,32 +330,37 @@ export function createTripService({
       'Trip check reached its time limit. Your last briefing is preserved.',
       controller.signal,
     )
-      .catch((error) => {
-        const current = store.get(workspace, trip.id);
+      .catch(async (error) => {
+        const current = await store.get(workspace, trip.id);
         if (current && current.revision === trip.revision)
-          store.update(workspace, trip.id, current.revision, {
+          await store.update(workspace, trip.id, current.revision, {
             lastError: controller.signal.aborted
               ? 'Check cancelled. Your previous briefing is preserved.'
               : cleanText(error.message, 180),
             nextCheckAt: new Date(now() + 3600000).toISOString(),
           });
       })
-      .finally(() => {
+      .finally(async () => {
         jobs.delete(key);
-        store.release(workspace, trip.id);
+        await store.release(workspace, trip.id);
+      })
+      .catch(() => {
+        console.warn(
+          '[TraceRisk] Trip storage could not be reached; previous results are preserved.',
+        );
       });
     jobs.set(key, { promise, controller, kind });
     return { status: 'checking', kind };
   }
   const service = {
     status: () => ({ activeChecks: jobs.size, monitoring: Boolean(interval) }),
-    check(workspace, id) {
-      const trip = store.get(workspace, id);
+    async check(workspace, id) {
+      const trip = await store.get(workspace, id);
       if (!trip) throw tripError('Trip not found.', 404);
       return launch(workspace, trip, 'check', async () => {
         const latest = await collect(trip);
         currentSignal()?.throwIfAborted();
-        const current = store.get(workspace, id);
+        const current = await store.get(workspace, id);
         if (!current || current.revision !== trip.revision) return;
         const diff = snapshotChanges(trip.latest, latest, latest.checkedAt);
         latest.pendingSignals = diff.pending;
@@ -363,7 +376,7 @@ export function createTripService({
               ),
           );
         const timeline = [...changes, ...(trip.timeline || [])].slice(0, 100);
-        store.update(workspace, id, trip.revision, {
+        await store.update(workspace, id, trip.revision, {
           latest,
           comparison: null,
           timeline,
@@ -374,8 +387,8 @@ export function createTripService({
         });
       });
     },
-    compare(workspace, id, { dayOffset = 1, routeIndex = 0 } = {}) {
-      const trip = store.get(workspace, id);
+    async compare(workspace, id, { dayOffset = 1, routeIndex = 0 } = {}) {
+      const trip = await store.get(workspace, id);
       if (!trip?.latest)
         throw tripError('Complete a trip check before comparing options.', 409);
       if (
@@ -403,9 +416,9 @@ export function createTripService({
         };
         const candidate = await collect(shifted, routeIndex);
         currentSignal()?.throwIfAborted();
-        const current = store.get(workspace, id);
+        const current = await store.get(workspace, id);
         if (!current || current.revision !== trip.revision) return;
-        store.update(workspace, id, trip.revision, {
+        await store.update(workspace, id, trip.revision, {
           comparison: {
             checkedAt: new Date(now()).toISOString(),
             dayOffset,
@@ -432,10 +445,10 @@ export function createTripService({
       if (ticking) return;
       ticking = true;
       try {
-        for (const due of store.due()) {
+        for (const due of await store.due()) {
           if (jobs.size >= 2) break;
           try {
-            service.check(due.workspace, due.id);
+            await service.check(due.workspace, due.id);
           } catch {
             /* Already claimed or capacity changed. */
           }
@@ -446,9 +459,9 @@ export function createTripService({
     },
     start() {
       if (!interval) {
-        interval = setInterval(() => service.tick(), 60000);
+        interval = setInterval(() => service.tick().catch(() => {}), 60000);
         interval.unref();
-        service.tick();
+        service.tick().catch(() => {});
       }
     },
     async stop() {

@@ -160,7 +160,7 @@ test('trip checks, scheduled changes, date comparisons and grounded assistant', 
         'road',
       ),
     );
-    service.compare(w.id, trip.id, { dayOffset: 2 });
+    await service.compare(w.id, trip.id, { dayOffset: 2 });
     await service.idle();
     saved = store.get(w.id, trip.id);
     assert.equal(saved.stops[0].startDate, '2026-10-22');
@@ -390,7 +390,7 @@ test('cancelled trip checks preserve their last completed briefing', async () =>
     routes: async () => ({ routes: [], notes: [] }),
   });
   try {
-    service.check(workspace.id, trip.id);
+    await service.check(workspace.id, trip.id);
     service.cancel(workspace.id, trip.id);
     await service.idle();
     assert.deepEqual(store.get(workspace.id, trip.id).latest, previous.latest);

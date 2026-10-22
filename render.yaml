@@ -1,3 +1,4 @@
+# To enable Supabase after applying its SQL schema, add the four settings in docs/SUPABASE_SETUP.md together.
 services:
   - type: web
     name: tracerisk

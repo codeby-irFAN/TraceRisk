@@ -22,90 +22,100 @@ const brief = (trip) => ({
   timeline: undefined,
   unreadCount: (trip.timeline || []).filter((e) => !e.read).length,
 });
-export function createTripRouter({ store, service, locationResolver }) {
+export function createTripRouter({ store, service, locationResolver, auth }) {
   const router = express.Router();
   const readLimit = createRateLimiter({ limit: 180, windowMs: 60000 });
   const checkLimit = createRateLimiter({ limit: 8, windowMs: 600000 });
-  router.get('/shared/:key', (req, res) => {
+  router.get('/shared/:key', async (req, res) => {
     readLimit.consume(req.ip);
-    const snapshot = store.readShare(req.params.key);
+    const snapshot = await store.readShare(req.params.key);
     if (!snapshot)
       throw tripError('This briefing link has expired or was revoked.', 404);
     res.set('Referrer-Policy', 'no-referrer');
     res.set('X-Robots-Tag', 'noindex, nofollow');
     res.json(snapshot);
   });
-  router.use(['/workspace', '/trips'], (req, res, next) => {
+  router.use(['/workspace', '/trips'], async (req, res, next) => {
     readLimit.consume(req.ip);
     requireSameOrigin(req);
-    const user = accountFor(req, store);
-    const workspace = user && store.workspace(user.workspaceId);
-    if (!workspace)
-      return res.status(401).json({
-        error: 'Please sign in to open your trips.',
-        code: 'SIGN_IN_REQUIRED',
-      });
-    req.workspace = workspace;
-    next();
+    const user = auth ? await auth.account(req, res) : accountFor(req, store);
+    const load = async () => {
+      const workspace = user && (await store.workspace(user.workspaceId));
+      if (!workspace)
+        return res.status(401).json({
+          error: 'Please sign in to open your trips.',
+          code: 'SIGN_IN_REQUIRED',
+        });
+      req.workspace = workspace;
+      next();
+    };
+    if (store.runWithToken && user)
+      return store.runWithToken(req.supabaseAccessToken, load);
+    return load();
   });
-  router.get('/workspace', (req, res) =>
+  router.get('/workspace', async (req, res) =>
     res.json({
       workspace: req.workspace,
       ...service.status(),
       persistent: store.persistent,
     }),
   );
-  router.patch('/workspace', (req, res) => {
+  router.patch('/workspace', async (req, res) => {
     const color = /^#[a-f0-9]{6}$/i.test(req.body?.color || '')
       ? req.body.color
       : req.workspace.color;
     res.json({
-      workspace: store.updateWorkspace(req.workspace, {
+      workspace: await store.updateWorkspace(req.workspace, {
         agencyName: cleanText(req.body?.agencyName || 'My travel desk', 80),
         contact: cleanText(req.body?.contact, 160),
         color,
       }),
     });
   });
-  router.get('/trips', (req, res) =>
+  router.get('/trips', async (req, res) =>
     res.json({
-      trips: store.list(req.workspace.id).map(brief),
+      trips: (await store.list(req.workspace.id)).map(brief),
       ...service.status(),
     }),
   );
-  router.post('/trips', (req, res) =>
+  router.post('/trips', async (req, res) =>
     res.status(201).json({
-      trip: store.create(
+      trip: await store.create(
         req.workspace.id,
         validateTrip(req.body, locationResolver),
       ),
     }),
   );
-  router.param('id', (req, _res, next, id) => {
-    req.trip = store.get(req.workspace.id, id);
+  router.param('id', async (req, _res, next, id) => {
+    req.trip = await store.get(req.workspace.id, id);
     if (!req.trip) return next(tripError('Trip not found.', 404));
     next();
   });
-  router.get('/trips/:id', (req, res) => res.json({ trip: req.trip }));
-  router.put('/trips/:id', (req, res) => {
+  router.get('/trips/:id', async (req, res) => res.json({ trip: req.trip }));
+  router.put('/trips/:id', async (req, res) => {
     if (req.trip.checking)
       throw tripError(
         'Cancel the running check before editing this trip.',
         409,
       );
     const config = validateTrip(req.body, locationResolver, req.trip);
-    store.revoke(req.workspace.id, req.trip.id);
+    await store.revoke(req.workspace.id, req.trip.id);
     res.json({
-      trip: store.update(req.workspace.id, req.trip.id, req.trip.revision, {
-        ...config,
-        latest: null,
-        comparison: null,
-        timeline: [],
-        lastError: null,
-      }),
+      trip: await store.update(
+        req.workspace.id,
+        req.trip.id,
+        req.trip.revision,
+        {
+          ...config,
+          latest: null,
+          comparison: null,
+          timeline: [],
+          lastError: null,
+        },
+      ),
     });
   });
-  router.patch('/trips/:id/watch', (req, res) => {
+  router.patch('/trips/:id/watch', async (req, res) => {
     if (req.trip.checking)
       throw tripError(
         'Wait for the current check before changing watch settings.',
@@ -122,48 +132,63 @@ export function createTripRouter({ store, service, locationResolver }) {
       alertLevel: req.body?.alertLevel === 'high' ? 'high' : 'all',
     };
     res.json({
-      trip: store.update(req.workspace.id, req.trip.id, req.trip.revision, {
-        watch,
-      }),
+      trip: await store.update(
+        req.workspace.id,
+        req.trip.id,
+        req.trip.revision,
+        {
+          watch,
+        },
+      ),
     });
   });
-  router.delete('/trips/:id', (req, res) => {
+  router.delete('/trips/:id', async (req, res) => {
     service.cancel(req.workspace.id, req.trip.id);
-    store.remove(req.workspace.id, req.trip.id);
+    await store.remove(req.workspace.id, req.trip.id);
     res.status(204).end();
   });
-  router.post('/trips/:id/check', (req, res) => {
+  router.post('/trips/:id/check', async (req, res) => {
     checkLimit.consume(req.workspace.id);
-    res.status(202).json(service.check(req.workspace.id, req.trip.id));
+    res.status(202).json(await service.check(req.workspace.id, req.trip.id));
   });
-  router.post('/trips/:id/compare', (req, res) => {
+  router.post('/trips/:id/compare', async (req, res) => {
     checkLimit.consume(req.workspace.id);
     res
       .status(202)
-      .json(service.compare(req.workspace.id, req.trip.id, req.body));
+      .json(await service.compare(req.workspace.id, req.trip.id, req.body));
   });
-  router.post('/trips/:id/cancel', (req, res) =>
+  router.post('/trips/:id/cancel', async (req, res) =>
     res.json({ cancelled: service.cancel(req.workspace.id, req.trip.id) }),
   );
-  router.post('/trips/:id/read', (req, res) => {
+  router.post('/trips/:id/read', async (req, res) => {
     if (req.trip.checking)
       throw tripError(
         'Wait for the current check to finish before marking updates read.',
         409,
       );
     res.json({
-      trip: store.update(req.workspace.id, req.trip.id, req.trip.revision, {
-        timeline: req.trip.timeline.map((event) => ({ ...event, read: true })),
-        ...(req.trip.nextCheckAt ? { nextCheckAt: req.trip.nextCheckAt } : {}),
-      }),
+      trip: await store.update(
+        req.workspace.id,
+        req.trip.id,
+        req.trip.revision,
+        {
+          timeline: req.trip.timeline.map((event) => ({
+            ...event,
+            read: true,
+          })),
+          ...(req.trip.nextCheckAt
+            ? { nextCheckAt: req.trip.nextCheckAt }
+            : {}),
+        },
+      ),
     });
   });
-  router.post('/trips/:id/ask', (req, res) => {
+  router.post('/trips/:id/ask', async (req, res) => {
     const question = cleanText(req.body?.question, 500);
     if (question.length < 4) throw tripError('Ask a question about this trip.');
     res.json(answerTripQuestion(req.trip, question));
   });
-  router.post('/trips/:id/share', (req, res) => {
+  router.post('/trips/:id/share', async (req, res) => {
     if (!req.trip.latest)
       throw tripError('Complete a trip check before sharing a briefing.', 409);
     const { title, origin, stops, preferences, latest, client } = req.trip;
@@ -181,13 +206,13 @@ export function createTripRouter({ store, service, locationResolver }) {
       },
       sharedAt: new Date().toISOString(),
     };
-    const share = store.share(req.workspace.id, req.trip.id, snapshot);
+    const share = await store.share(req.workspace.id, req.trip.id, snapshot);
     res
       .status(201)
       .json({ path: `/share/${share.key}`, expiresAt: share.expiresAt });
   });
-  router.delete('/trips/:id/share', (req, res) => {
-    store.revoke(req.workspace.id, req.trip.id);
+  router.delete('/trips/:id/share', async (req, res) => {
+    await store.revoke(req.workspace.id, req.trip.id);
     res.status(204).end();
   });
   router.use((error, _req, res, _next) => {

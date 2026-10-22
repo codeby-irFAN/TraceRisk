@@ -188,3 +188,9 @@ Search can miss new, local-language, social-only, or poorly indexed reports. Pub
 Saved plans, theme preferences, and checklist items stay in the current browser; they are not account-synced or guaranteed to survive cleared storage. Server quotas and caches are in memory, not shared between replicas. Travel details and selected evidence are sent to the relevant providers to perform a scan; see the [data-handling decisions](DECISIONS.md#data-handling-and-credentials).
 
 TraceRisk remains a prototype. Use official authorities, emergency services, and transport operators for time-critical decisions.
+
+## Supabase cloud accounts and storage
+
+Supabase Auth/Postgres integration is available alongside local SQLite mode. Follow the [project-specific Supabase setup guide](docs/SUPABASE_SETUP.md) to apply the SQL migration and add the Render environment settings. The guide includes your project URL and public key, email-confirmation/reset redirects, the server-only secret setting and a read-only SQLite-to-Supabase trip migration tool.
+
+The integration uses private ownership-checked storage, HttpOnly PKCE sessions and server-only writes for generated reports. Old local accounts are separate; users register/confirm a Supabase account, and existing trips can be transferred using an explicitly reviewed mapping. A code push alone does not create tables or change the Render environment. Supabase stores data across redeployments; it does not keep Render Free awake for scheduled checks.

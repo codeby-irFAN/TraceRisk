@@ -1,3 +1,4 @@
+import ResetPassword from './trips/ResetPassword';
 import { useEffect, useState } from 'react';
 import QuickCheck from './QuickCheck';
 import Workspace from './trips/Workspace';
@@ -29,6 +30,7 @@ function Shared({ token }) {
 }
 export default function App() {
   const path = window.location.pathname;
+  if (path === '/reset-password') return <ResetPassword />;
   if (path === '/check')
     return (
       <>

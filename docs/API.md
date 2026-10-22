@@ -190,3 +190,13 @@ Trip body: `{title,client,origin:null|{query,locationId},stops:[{query,locationI
 A snapshot contains `reports` for stops/origin/supported corridor areas, explicit per-report dates, route geometry/status/notes, summary counts and collection time. Reports expose `decision.checks` by information type, personal impact, verification/source support and conflicts. Coverage is not a safety probability. Timeline kinds include `new`, `changed`, `not-observed`, `resolved` and `coverage`; source disappearance alone never means resolution. There are up to 100 timeline events per trip.
 
 Registration/login/password changes share a twelve-attempt limit per client/ten minutes; authenticated reads to 180 per client/minute, and checks/comparisons to eight per workspace/ten minutes. At most two full trip jobs run per process. Edit/watch/read operations can return 409 while a check is active; check capacity/rate limits return 429. Jobs and rate counters are process-local; saved trips, completed results and shares reside in SQLite.
+
+## Supabase mode (v5.2)
+
+Configured deployments retain the same trip/workspace HTTP API while storing data in Supabase Postgres. `/api/auth/session` adds `provider: "supabase"`. Registration can return `{user:null,confirmationRequired:true,message}`; the client must show the confirmation instruction and must not treat it as a signed-in session. Authentication uses HttpOnly PKCE cookies, not a browser-supplied user ID. The server verifies users with Supabase Auth before scoping storage. Generated-report writes require the private server secret and cannot be performed directly by an authenticated browser client.
+
+- `GET /auth/callback?code=...`: exchanges a single-use PKCE authorization code and redirects to the app. Recovery also checks the request's same-browser state.
+- `POST /api/auth/forgot-password`: `{email}`; sends a generic confirmation and requests a Supabase recovery email. Subject to provider delivery limits.
+- `POST /api/auth/reset-password`: `{newPassword}`; requires the short-lived HttpOnly recovery grant from a successful callback and the corresponding current session.
+
+These mutations require the existing `X-TraceRisk-Request: 1` header and accepted Origin. A malformed/expired recovery link returns to the app with a plain-language error. `/api/health` reports `storageProvider` (`sqlite` or `supabase`) and scheduler capability, without secret values. SMTP/email settings and live schema readiness require separate verification.

@@ -374,3 +374,53 @@ test('account sign-in persists across reload, signs out and protects saved trips
     page.getByRole('heading', { name: 'Historic attractions', exact: true }),
   ).toBeVisible();
 });
+
+test('Supabase confirmation and forgot-password screens explain the next step', async ({
+  page,
+}) => {
+  await page.route('**/api/auth/session', (r) =>
+    r.fulfill({ json: { user: null, provider: 'supabase' } }),
+  );
+  await page.route('**/api/auth/register', (r) =>
+    r.fulfill({
+      status: 201,
+      json: {
+        user: null,
+        confirmationRequired: true,
+        message: 'Check your email to confirm your account, then sign in.',
+      },
+    }),
+  );
+  await page.route('**/api/auth/forgot-password', (r) =>
+    r.fulfill({
+      json: {
+        message:
+          'If an account uses that email, a password-reset link will arrive shortly. Open it in this browser.',
+      },
+    }),
+  );
+  await page.goto('/');
+  await page.getByLabel('Your name').fill('Supabase traveller');
+  await page.getByLabel('Email', { exact: true }).fill('confirm@example.com');
+  await page
+    .getByLabel('Password', { exact: true })
+    .fill('valid-new-password-456');
+  await page
+    .getByRole('button', { name: 'Create account', exact: true })
+    .click();
+  await expect(
+    page.getByText('Check your email to confirm your account, then sign in.'),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'New trip', exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole('button', { name: 'Forgot password?', exact: true })
+    .click();
+  await expect(page.getByLabel('Password', { exact: true })).toHaveCount(0);
+  await page.getByLabel('Email', { exact: true }).fill('confirm@example.com');
+  await page
+    .getByRole('button', { name: 'Send reset link', exact: true })
+    .click();
+  await expect(page.getByText(/password-reset link will arrive/)).toBeVisible();
+});

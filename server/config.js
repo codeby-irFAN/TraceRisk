@@ -27,7 +27,7 @@ export const SCAN_STAGES = Object.freeze({
 });
 export const CACHE_TTL_MS = 60_000;
 export const DEFAULT_GROQ_MODEL = 'openai/gpt-oss-20b';
-export const ENGINE_VERSION = '5.1.0';
+export const ENGINE_VERSION = '5.2.0';
 
 export const MAX_WEB_SOURCES = 12;
 export const FETCH_BATCH_SIZE = 1;
