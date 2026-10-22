@@ -59,7 +59,7 @@ const fixture = {
 };
 
 async function chooseDestination(page) {
-  await page.goto('/');
+  await page.goto('/check');
   await page.getByLabel('WHERE ARE YOU GOING?').fill('Rampur');
   await page.getByLabel('Travel start date').fill(tomorrow);
   await page.getByLabel('Travel end date').fill(tripEnd);
@@ -270,7 +270,7 @@ test('location lookup can be cancelled before confirming a destination', async (
 }) => {
   await page.unroute('**/api/locations?*');
   await page.route('**/api/locations?*', () => {});
-  await page.goto('/');
+  await page.goto('/check');
   await page.getByLabel('WHERE ARE YOU GOING?').fill('Rampur');
   await page.getByRole('button', { name: 'Find destination' }).click();
   await expect(
@@ -324,7 +324,7 @@ test('saved trip plans, reminders and the selected theme persist without reusing
 test('quick date choices create a valid trip across month boundaries', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/check');
   await page.getByRole('button', { name: 'This weekend', exact: true }).click();
   const start = await page.getByLabel('Travel start date').inputValue();
   const end = await page.getByLabel('Travel end date').inputValue();
@@ -429,7 +429,7 @@ test('unavailable browser storage does not prevent planning', async ({
       throw new DOMException('Unavailable', 'QuotaExceededError');
     };
   });
-  await page.goto('/');
+  await page.goto('/check');
   await page.getByLabel('WHERE ARE YOU GOING?').fill('Jaipur');
   await page.getByRole('button', { name: 'Save plan', exact: true }).click();
   await expect(

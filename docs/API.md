@@ -151,3 +151,32 @@ Errors generally contain `error` and, where supplied by the route, `code`. Do no
 | `500` | —                   | Unexpected server error.                                                                                         |
 
 HTTP 429 responses include `Retry-After` as seconds. Partial provider failures can instead produce a successful, limited/inconclusive response with warnings and fallback metadata; HTTP 200 is not proof of complete coverage. Missing credentials and provider authentication failures appear as failed lane diagnostics; they do not fabricate successful searches.
+
+## Trip workspace API (v5)
+
+`POST /api/workspaces` returns `{workspace,key}`. Keep the key private. All `/api/workspace` and `/api/trips` endpoints require `Authorization: Bearer <key>`. Keys are hashed in SQLite; trips and mutations are scoped to the authenticated workspace.
+
+| Method / path                 | Behaviour                                                                                           |
+| ----------------------------- | --------------------------------------------------------------------------------------------------- |
+| `GET /api/workspace`          | Branding, persistence flag and scheduler status                                                     |
+| `PATCH /api/workspace`        | `{agencyName,contact,color}`; colour is a six-digit hex string                                      |
+| `GET /api/trips`              | Trip summaries, unread counts and scheduler status                                                  |
+| `POST /api/trips`             | Create a validated itinerary                                                                        |
+| `GET /api/trips/:id`          | Full itinerary, latest evidence, comparison and change timeline                                     |
+| `PUT /api/trips/:id`          | Replace itinerary; invalidates results, history and public share                                    |
+| `DELETE /api/trips/:id`       | Cancel job and delete trip, history and public share                                                |
+| `POST /api/trips/:id/check`   | Start a background check; returns 202; poll the trip for `checking` and completed `latest`          |
+| `POST /api/trips/:id/cancel`  | Cancel active check, preserving previous completed evidence                                         |
+| `PATCH /api/trips/:id/watch`  | `{enabled,frequencyHours,alertLevel}` (`all` or `high`)                                             |
+| `POST /api/trips/:id/read`    | Mark timeline updates read                                                                          |
+| `POST /api/trips/:id/compare` | `{dayOffset:0..7,routeIndex:0..2}`; at least one differs from zero; actual supported route required |
+| `POST /api/trips/:id/ask`     | `{question}`; evidence-based answer, citations and missing information                              |
+| `POST /api/trips/:id/share`   | `{includeClient:false}`; returns path and seven-day expiry; replaces old share                      |
+| `DELETE /api/trips/:id/share` | Revoke current share                                                                                |
+| `GET /api/shared/:key`        | Public frozen briefing, or 404 when expired/revoked                                                 |
+
+Trip body: `{title,client,origin:null|{query,locationId},stops:[{query,locationId,startDate,endDate}],preferences:{mode,children,limitedMobility,respiratory},watch:{enabled,frequencyHours,alertLevel}}`. Confirm `locationId` from `GET /api/locations?destination=...`; it must match its original query. Do not supply coordinates. When editing, an unchanged place may use `{savedId,query}` referencing its previously saved server-side place. One to six chronological stops, at most 30 days each and 90 days overall. Modes: `car`, `bus`, `motorcycle`, `train`, `flight`. Watch frequencies: 1, 3, 6, 12 or 24 hours. Maximum 50 trips per workspace.
+
+A snapshot contains `reports` for stops/origin/supported corridor areas, explicit per-report dates, route geometry/status/notes, summary counts and collection time. Reports expose `decision.checks` by information type, personal impact, verification/source support and conflicts. Coverage is not a safety probability. Timeline kinds include `new`, `changed`, `not-observed`, `resolved` and `coverage`; source disappearance alone never means resolution. There are up to 100 timeline events per trip.
+
+Workspace creation is limited to eight per client/hour, authenticated reads to 180 per client/minute, and checks/comparisons to eight per workspace/ten minutes. At most two full trip jobs run per process. Edit/watch/read operations can return 409 while a check is active; check capacity/rate limits return 429. Jobs and rate counters are process-local; saved trips, completed results and shares reside in SQLite.

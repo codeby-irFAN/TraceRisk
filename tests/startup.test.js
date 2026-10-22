@@ -9,7 +9,11 @@ test('an occupied backend port fails startup without reporting readiness', async
   t.after(() => occupied.close());
   const child = spawn(process.execPath, ['server/index.js'], {
     cwd: new URL('..', import.meta.url),
-    env: { ...process.env, PORT: String(occupied.address().port) },
+    env: {
+      ...process.env,
+      TRACERISK_DB_PATH: ':memory:',
+      PORT: String(occupied.address().port),
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   t.after(() => {

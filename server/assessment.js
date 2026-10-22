@@ -149,6 +149,7 @@ export function normalizeIssues(rawIssues, sources) {
       confidence: clampNumber(raw.confidence, 0, 1, 0.45),
       evidenceStatus: cleanText(raw.evidenceStatus || 'Reported lead', 80),
       dateBasis: cleanText(raw.dateBasis, 100),
+      coordinates: raw.coordinates || null,
       summary: cleanText(raw.summary, 1200),
       travelerImpact: cleanText(raw.travelerImpact, 380),
       evidence: cleanText(raw.evidence, 900),

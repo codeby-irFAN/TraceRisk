@@ -1,4 +1,10 @@
 import { performance } from 'node:perf_hooks';
+import { fetchEnvironmentalContext } from './environment.js';
+import {
+  evidenceDetails,
+  decisionFor,
+  resolutionReports,
+} from './trip-intelligence.js';
 import {
   MAX_WEB_SOURCES,
   SCAN_STAGES,
@@ -62,6 +68,9 @@ export function createAnalyzer({
   extract = fetchTinyFish,
   weather = fetchOpenMeteoHazards,
   assess = scoreWithAI,
+  environment = weather === fetchOpenMeteoHazards
+    ? fetchEnvironmentalContext
+    : async () => ({ sources: [], issues: [], meta: {} }),
   stages = SCAN_STAGES,
   now = Date.now,
 } = {}) {
@@ -106,6 +115,10 @@ export function createAnalyzer({
           ),
         );
         weatherPromise.catch(() => {});
+        const environmentPromise = stage('environment', stages.weather, () =>
+          environment(trip),
+        );
+        environmentPromise.catch(() => {});
         const groups = buildQueries(
           trip.destination,
           trip.startDate,
@@ -156,7 +169,16 @@ export function createAnalyzer({
           weatherOutcome.status === 'fulfilled'
             ? weatherOutcome.value
             : emptyWeather(trip, cleanText(weatherOutcome.reason.message, 180));
-        const sources = [...web, ...weatherBundle.sources];
+        const environmentalOutcome = await environmentPromise;
+        const environmental =
+          environmentalOutcome.status === 'fulfilled'
+            ? environmentalOutcome.value
+            : { sources: [], issues: [], meta: {} };
+        const sources = [
+          ...web,
+          ...weatherBundle.sources,
+          ...environmental.sources,
+        ];
         const assessment = web.some((s) => s.fetched && s.quality.relevant)
           ? await stage('assessment', stages.assessment, () =>
               assess({ ...trip, sources: web }),
@@ -169,10 +191,14 @@ export function createAnalyzer({
           trip,
           collectedAt,
         );
-        const issues = mergeWeatherIssues(
-          verified.issues,
-          weatherBundle.issues,
+        const issues = evidenceDetails(
+          mergeWeatherIssues(
+            [...verified.issues, ...environmental.issues],
+            weatherBundle.issues,
+            sources,
+          ),
           sources,
+          new Date(collectedAt).toISOString(),
         );
         const leads = buildLeads(web, issues, context);
         const relevant = web.filter((s) => s.quality.relevant);
@@ -257,7 +283,7 @@ export function createAnalyzer({
           });
         }
         const riskScore = computeOverallScore(issues);
-        return {
+        const result = {
           engineVersion: ENGINE_VERSION,
           destination: trip.destination,
           startDate: trip.startDate,
@@ -305,6 +331,8 @@ export function createAnalyzer({
           pagesFetched,
           weatherSourcesChecked: weatherBundle.sources.length,
           weather: weatherBundle.meta,
+          environment: environmental.meta,
+          resolutions: resolutionReports(web, collectedAt),
           searchMs,
           fetchMs: timings.extraction?.durationMs || 0,
           assessmentMs: timings.assessment?.durationMs || 0,
@@ -342,6 +370,8 @@ export function createAnalyzer({
           disclaimer:
             'TraceRisk provides travel information, not an official safety rating or a guarantee of safety. Source quotations are checked against retrieved text, not independently fact-checked. Weather signals are model-derived; confirm important decisions with authorities and operators.',
         };
+        result.decision = decisionFor(result);
+        return result;
       },
       REQUEST_BUDGET_MS - 500,
       'The scan could not finish within its processing budget.',

@@ -8,6 +8,8 @@ services:
     startCommand: npm run server
     healthCheckPath: /api/health
     envVars:
+      - key: NODE_VERSION
+        value: '24'
       - key: TINYFISH_API_KEY
         sync: false
       - key: GROQ_API_KEY

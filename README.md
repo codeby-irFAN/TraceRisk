@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/codeby-irFAN/TraceRisk/actions/workflows/ci.yml/badge.svg)](https://github.com/codeby-irFAN/TraceRisk/actions/workflows/ci.yml)
 
-TraceRisk turns local reports, official advisories, and forecast data into a source-linked briefing for an Indian destination and travel dates. Confirm the right city and state, review what may affect your journey, and keep a copy of the evidence and its limitations.
+TraceRisk follows an Indian trip from planning to departure: dated stops, road corridors, source-linked evidence, scheduled change checks and branded briefings. The trip workspace is at `/`; the original destination checker remains at `/check`.
 
 > TraceRisk is a prototype for travel awareness, not an official safety rating, emergency service, or guarantee of safety. Confirm important conditions with official authorities and transport operators.
 
@@ -14,22 +14,48 @@ Use this README for the current workflow; the recording is a separate demonstrat
 
 ## What you can do
 
-- **Plan a trip:** choose destination suggestions or enter a place, use date shortcuts, and explicitly confirm the resolved city, district, and state.
-- **Keep a notebook:** save up to six trip plans in the current browser, reopen or remove them, and use a personal preparation checklist. Saved plans contain trip details, not previous safety assessments.
-- **Review eight search categories:** traffic and roads, public transport, civil unrest, official advisories, health, crime, infrastructure, and regional news.
-- **Inspect the evidence:** open source links, distinguish full pages from snippets, see government-domain and publication-date badges, and search or filter the source list.
-- **Understand the weather window:** see daily forecasts and modelled river flow, the number of trip days covered, and the exact dates without daily forecasts.
-- **Get useful results from sparse searches:** review local source leads, date-matched weather, and official next checks even when no disruption is established.
-- **Explore findings:** filter signals by category and sort them by score or confidence while keeping coverage warnings visible.
-- **Keep your briefing:** download the complete findings and source links as text, or print the current filtered view with its limitations.
-- **Control the experience:** cancel a lookup or scan, switch between daylight and evening themes, and use the responsive interface with keyboard navigation and reduced-motion support.
+| Feature                    | Working behaviour                                                                                                                                                                                             |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Route-aware disruption map | Confirm an origin and stops, display OSRM road geometry and alternatives, and check up to two intermediate areas. Source-supported coordinates get incident markers; broader reports stay in a regional list. |
+| Trip Watch                 | Save up to 50 trips in a private workspace. Server checks every 1, 3, 6, 12 or 24 hours until trip end and records meaningful in-app alerts. Pause, resume, filter alerts and mark updates read.              |
+| Alternative comparison     | Recheck a supported road option and/or shift the itinerary by 0–7 days. Compare dated evidence, weather coverage and estimated driving time without changing the saved plan.                                  |
+| Multi-city itinerary       | Add up to six confirmed stops, each with arrival/departure dates, in a combined itinerary and report timeline.                                                                                                |
+| Evidence verification      | Inspect quotations, original links, event-date basis, affected area, publisher support, possible conflicting reports and last verification time.                                                              |
+| Personal impact            | Choose car, bus, motorcycle, train or flight; add children, limited mobility and air-quality needs for practical guidance.                                                                                    |
+| Travel-agent desk          | Filter client trips, monitor watch status and unread updates, configure agency branding and generate printable, shareable briefings.                                                                          |
+
+The evidence-grounded trip assistant explains transport, weather, departure checks and recorded changes using saved evidence and source citations. It explicitly identifies missing information. Quick Check still offers its browser notebook, date shortcuts, text export and source filters.
+
+Create a workspace, **save its recovery key from Settings**, then create an itinerary and run a check. The key grants access to that workspace; there is no password/email recovery or team role system. Share links are frozen snapshots, expire after seven days, can be revoked, and omit the client name unless explicitly selected. Anyone holding a share link can read its briefing.
+
+Trip Watch alerts appear **inside the workspace**, including changes collected while the browser was closed. There is no email, SMS or operating-system push delivery. The server must remain running with persistent storage for reliable monitoring.
+
+No established disruption still produces a useful plan: dated forecasts where available, source leads, explicit coverage by information type and practical departure checks. Missing evidence never becomes an invented safe verdict. A disappearing report is labelled “not observed”; only an explicit recent reopening/withdrawal report supports “resolved”.
+
+Road routing uses driving estimates, excludes live traffic/closures and does not provide bus timetables. Train/flight routes and ETA are unsupported; their stop evidence and operator checks remain available. Corridor checks sample at most two areas using their leg’s travel dates; they do not continuously verify every road segment. Alternative routes are supplied only when the routing provider returns them (normally a two-point road journey).
+
+Weather/flood forecasts, modelled US AQI and nearby orange/red GDACS alerts supplement retrieved reports. Forecast windows and provider failures remain visible. Evidence support is not a calibrated safety probability. Publication-grade accuracy and an 80–90% decision rate have **not** been established by independent evaluation.
 
 The visual theme uses flat ivory, forest green, and terracotta surfaces, with a generated map-pin and route emblem shared by the header, footer and favicon. The frontend uses React 19, Vite 7, Lucide icons, and CSS transitions; the backend uses Express 5 on Node.js.
+
+## Trip workspace preview
+
+Illustrative fixture data from browser tests; these screenshots do not show live travel conditions.
+
+![Client travel desk in the redesigned trip workspace](graphics/screenshots/trip-workspace-light.png)
+
+<details><summary>Dark and mobile workspace</summary>
+
+![Dark travel desk](graphics/screenshots/trip-workspace-dark.png)
+
+<img src="graphics/screenshots/trip-workspace-mobile.png" alt="Mobile trip workspace in dark mode" width="320" />
+
+</details>
 
 <details>
 <summary>View the current interface</summary>
 
-Interface previews, not evidence of a successful live provider scan. Connection indicators are illustrative.
+Quick Check interface previews (the legacy `/check` view), not evidence of a successful live provider scan. Connection indicators are illustrative.
 
 ### Daylight
 
@@ -47,7 +73,7 @@ Interface previews, not evidence of a successful live provider scan. Connection 
 
 ## Run locally
 
-Use **Node.js 24** for the same major version as CI. The package supports Node.js **20.19+ in the 20.x line, or 22.12+**. Run these commands from the repository root:
+Use **Node.js 24** for the same major version as CI. Node.js **24 or newer is required** for the built-in SQLite database. Run these commands from the repository root:
 
 ```sh
 git clone https://github.com/codeby-irFAN/TraceRisk.git

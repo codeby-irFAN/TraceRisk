@@ -131,3 +131,27 @@ The blueprint assumes Render's ingress proxy is the one trusted hop. If adding a
 6. Test the configured proxy path when used. Recheck after any key, host, model, or topology change.
 
 The automated suite uses fixtures and remains separate from these live checks. Deployment settings, a saved environment snapshot, a GitHub push, and a passed CI run are distinct events; none alone proves live provider behavior.
+
+## Version 5: persistent Trip Watch
+
+Node.js **24+** is required (`node:sqlite`). `server/index.js` creates the SQLite database at `TRACERISK_DB_PATH` (default `data/tracerisk.sqlite`) and starts the watch worker unless `TRIP_WATCH_ENABLED=false`. The containing directory is created privately; the database, WAL and SHM files are ignored by Git. Back up the database with SQLite's online backup tooling or stop the server before copying its files. Recovery keys are stored as SHA-256 hashes; browser keys are bearer credentials, so keep them private and serve the application through HTTPS.
+
+The existing Render **free** blueprint remains free and ephemeral. It sleeps and does not retain the default database across redeployments. **It cannot provide durable scheduled monitoring.** For production, configure an always-running service, mount a persistent disk and set `TRACERISK_DB_PATH` to a file on that mount (for example `/var/data/tracerisk.sqlite`). Provisioning a paid plan/disk is a hosting action, not something this repository automatically purchases. Settings displays whether the server uses a file database and whether the watch worker is running; a file database alone does not prove the host retains that file.
+
+Deploy one server instance with its local SQLite disk. Multi-instance workers, distributed scheduling, email/SMS/push delivery, enterprise access roles and billing are not implemented. Watch checks run on a one-minute scheduler with two active trip jobs and three concurrent place scans, so high load can delay the requested check time. Each place scan has its existing engine budget; a complete itinerary has a 110-second budget. The original destination checker keeps its 20-second server budget. After cancellation or failure the previous completed briefing is preserved. Stop dates are ISO calendar dates; watch expiry uses the last trip date at 23:59 UTC.
+
+Additional network access:
+
+| Purpose                  | Destination                                                                                                                               |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Air quality              | `air-quality-api.open-meteo.com` (CAMS model output; US AQI, not CPCB station observations)                                               |
+| Regional disaster alerts | `www.gdacs.org/xml/rss.xml` (orange/red events within 150 km and overlapping trip dates; point marks event location, not impact boundary) |
+| Road routing             | `router.project-osrm.org` by default; `ROUTING_BASE_URL` overrides the OSRM-compatible base                                               |
+| Corridor place lookup    | `nominatim.openstreetmap.org`; `REVERSE_GEOCODING_URL` overrides the Nominatim-compatible base                                            |
+| Browser map tiles        | `tile.openstreetmap.org`                                                                                                                  |
+
+Public OSRM, Nominatim and OpenStreetMap services have usage policies and no project-specific availability guarantee. Reverse lookups are globally serialized at more than one second apart, with bounded caching. Attribution is shown on the map. For commercial/high-volume use, configure appropriate routing, geocoding and tile services and review their policies; the current tile URL is configured in `src/trips/RouteMap.jsx`. Use licensed commercial Open-Meteo access when required; the current free endpoints are for non-commercial use. Hotel advertisements, payments and bookings are not implemented.
+
+The cloud testing proxy rejected live OSRM/GDACS requests with HTTP 403; direct air-quality requests also failed. Their parsing, routing contracts and unavailable-provider behaviour are fixture-tested; live end-to-end availability must be verified on the target host. They fail independently without removing the itinerary or completed evidence.
+
+Workspace recovery is by the saved key only. Public briefings expire after seven days and can be revoked or replaced. Avoid putting sensitive information in client names or notes; this workspace is not an enterprise client-record system.

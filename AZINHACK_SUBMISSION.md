@@ -2,7 +2,7 @@
 
 ## Summary
 
-**The travel field guide for India.** TraceRisk helps travellers turn scattered local reports, official notices, and forecasts into a source-linked briefing for a confirmed Indian destination and travel dates. A planning notebook, explicit coverage gaps, and a downloadable briefing keep the experience useful before and after a scan.
+**The travel field guide for India.** TraceRisk helps travellers turn scattered local reports, official notices, and forecasts into a source-linked briefing for a confirmed Indian destination and travel dates. A persistent trip workspace follows the journey with multi-city itineraries, route checks, change alerts and shareable evidence.
 
 [Current setup and features](README.md) · [Demo recording](https://drive.google.com/file/d/1RIJOVODbjnc7rzDPaioiRQqtznZLq5oE/view?usp=drivesdk) · [Engineering decisions](DECISIONS.md)
 
@@ -20,22 +20,23 @@ The interface uses an ivory, forest-green, and terracotta travel-journal theme w
 
 ## Implemented features
 
-- Confirmed destinations and date shortcuts, including weekend and next-week plans.
-- Up to six browser-saved trip plans and a preparation checklist; restoring a plan requires fresh location confirmation.
-- Eight search categories with a broader retry for lanes without usable targeted results.
-- Source citations, government-domain badges, publication dates, older-report warnings, and opened-page/snippet distinctions.
-- Daily weather coverage shown as matched trip days and exact missing date ranges; river models are presented separately.
-- Filterable/sortable signals and searchable source lists without hiding overall coverage warnings.
-- Complete text briefing downloads and a printable filtered view with its limitations.
-- Cancellable lookup/scan requests, independent subscribers to shared scans, bounded runtime, request limits, and short-lived caching.
-- Node regression tests, Playwright browser tests, and GitHub Actions checks.
+- Route map with source-supported event locations, regional findings and up to two dated corridor checks.
+- Persistent Trip Watch with configurable checks and meaningful in-app change alerts.
+- Actual alternative-road/date rechecks with evidence, forecast coverage and driving-time comparisons.
+- Up to six dated stops per itinerary and 50 trips per private workspace.
+- Evidence panel with quotations, event-date basis, affected area, publisher support, conflicts and collection time.
+- Travel-mode and accessibility/family/air-quality preferences with practical impact guidance.
+- Client travel desk, agency branding and seven-day revocable public briefing snapshots.
+- Evidence-grounded trip assistant with citations and explicit information limits.
+- Existing Quick Check, daily weather/river data, browser notebook, text export and printable views.
+- Node regression tests, Playwright browser tests and GitHub Actions checks.
 
 ## Technology
 
 | Layer                    | Implementation                                                                                         |
 | ------------------------ | ------------------------------------------------------------------------------------------------------ |
 | Interface                | React 19, Vite 7, Lucide React, CSS themes and transitions.                                            |
-| Server                   | Node.js and Express 5; Node.js 24 used in CI.                                                          |
+| Server                   | Node.js 24+ and Express 5 with SQLite persistence.                                                     |
 | Discovery and extraction | TinyFish Search and Fetch.                                                                             |
 | Assessment               | Groq quotation selection, deterministic fallback.                                                      |
 | Place and forecasts      | Open-Meteo geocoding, daily forecasts, and river-discharge models; optional external Worker transport. |
@@ -43,16 +44,17 @@ The interface uses an ivory, forest-green, and terracotta travel-journal theme w
 
 ## Suggested walkthrough
 
-1. Start the app with provider access as described in the [README](README.md). Enter a destination and choose dates or a shortcut.
-2. Select **Find destination**, explain the location choices, then confirm the correct city/state. This prevents attaching the wrong place's weather to the trip.
-3. Save the plan, toggle evening/daylight mode, and demonstrate the checklist. Explain that local saves contain trip details rather than a past safety verdict.
-4. Select **Check my trip**. Show cancellation if useful; start again for a completed briefing. Do not present mocked test output as a live scan.
-5. Review the overall collection status before discussing individual signals. Open a cited source, compare snippet versus opened-page badges, and explain old publication dates.
-6. Show matched weather days and any missing dates. Describe model-derived hazards and river flow as screening context, not official IMD/flood warnings.
-7. Filter findings and search the evidence, then download the complete briefing or print the current view.
-8. Explain the [score formula](DECISIONS.md#risk-scoring), provider fallback, and the [automated checks](CONTRIBUTING.md#validation).
+1. Create a private workspace and save its recovery key from Settings.
+2. Create a trip with an origin, confirmed destination and dates. Add another stop and select the travel mode and relevant needs.
+3. Run a check. Show the itinerary and practical departure checks; explain which date windows have forecast coverage.
+4. Open Evidence and follow an original source. Explain the event-date basis, source support and any conflicting report.
+5. Open Route map. Distinguish itinerary markers, supported incident points and unlocated regional findings. Explain when routing is unavailable.
+6. Open What changed and show configurable Trip Watch frequency. New/changed/not-observed/resolved have different meanings; missing a report never proves a disruption cleared.
+7. Compare a later departure and, when supplied by the routing provider, a different road option. Discuss coverage and impact rather than claiming fewer reports means safer.
+8. Ask the trip assistant about bus travel or departure checks. Follow a citation.
+9. Open Travel desk, set agency branding in Settings, and create a briefing link with client-name inclusion off by default. Print/save the briefing as PDF.
 
-A live web-evidence demo requires a valid TinyFish key and working geocoding/forecast access. AI quotation selection is optional. Version 4 runs within a twenty-second server budget and preserves forecasts, source leads and next checks when providers are slow. Health indicators report configuration, not verified upstream success. If live collection fails, demonstrate the error honestly and describe fixture-based regression tests separately.
+Live web retrieval requires a valid TinyFish key and provider access; Groq is optional. A single place retains its short processing budget, while a full itinerary can take up to 110 seconds. Reliable Trip Watch requires an always-running host and persistent disk. The free Render blueprint does not provide durable monitoring. External routing/GDACS live access was blocked by the cloud testing proxy; describe fixture tests separately from live results.
 
 ## Why coverage is part of the product
 
@@ -60,7 +62,7 @@ TraceRisk separates evidence collection from the presence of findings. A zero sc
 
 ## Current limitations
 
-Search may miss new or local-language reporting. Place matching depends on geocoding coverage and user selection. News, extraction, weather, and model access can fail or run out of quota. Rule scores and weather thresholds are heuristics rather than calibrated forecasts. Browser saves are not account-synced; process-local limits/caches do not coordinate multiple server instances.
+Search may miss new or local-language reporting. Place matching depends on geocoding coverage and user selection. News, extraction, weather, and model access can fail or run out of quota. Rule scores and weather thresholds are heuristics rather than calibrated forecasts. Workspace access uses a private recovery key without email recovery or team roles. Process-local limits/caches do not coordinate multiple server instances. Corridor checks sample areas, not every road segment; train/flight routes and live traffic are unsupported.
 
 ## Future work
 

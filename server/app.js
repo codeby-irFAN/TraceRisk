@@ -1,3 +1,6 @@
+import { createTripStore } from './trip-store.js';
+import { createTripService } from './trip-service.js';
+import { createTripRouter } from './trip-api.js';
 import express from 'express';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
@@ -27,6 +30,8 @@ export function createApp({
   locationResolver = createLocationResolver(),
   scanOptions = {},
   locationOptions = {},
+  tripStore = createTripStore(),
+  tripServiceOptions = {},
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -202,6 +207,22 @@ export function createApp({
       client.cleanup();
     }
   });
+
+  const tripService = createTripService({
+    store: tripStore,
+    scan,
+    ...tripServiceOptions,
+  });
+  app.locals.tripService = tripService;
+  app.locals.tripStore = tripStore;
+  app.use(
+    '/api',
+    createTripRouter({
+      store: tripStore,
+      service: tripService,
+      locationResolver,
+    }),
+  );
 
   app.use('/api', (_req, res) =>
     res.status(404).json({ error: 'API endpoint not found.' }),

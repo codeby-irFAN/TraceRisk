@@ -21,3 +21,9 @@ Thumbs.db
 playwright-report/
 test-results/
 artifacts/
+
+# Private trip workspace database
+data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

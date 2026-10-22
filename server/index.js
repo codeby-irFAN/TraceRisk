@@ -1,4 +1,9 @@
-import { app } from './app.js';
+import { createApp } from './app.js';
+import { createTripStore } from './trip-store.js';
+const tripStore = createTripStore({
+  filename: process.env.TRACERISK_DB_PATH || 'data/tracerisk.sqlite',
+});
+const app = createApp({ tripStore });
 import { PORT, DEFAULT_GROQ_MODEL, hasCredential } from './config.js';
 
 const server = app.listen(PORT, '0.0.0.0');
@@ -10,6 +15,8 @@ server.on('error', (error) => {
 
 server.on('listening', () => {
   console.log(`TraceRisk server listening on port ${PORT}`);
+  if (process.env.TRIP_WATCH_ENABLED !== 'false')
+    app.locals.tripService.start();
   console.log(
     `TinyFish: ${hasCredential('TINYFISH_API_KEY') ? 'configured' : 'missing key (.env)'}`,
   );
@@ -24,3 +31,15 @@ server.on('listening', () => {
     }`,
   );
 });
+
+for (const signal of ['SIGTERM', 'SIGINT'])
+  process.once(signal, async () => {
+    const force = setTimeout(() => process.exit(1), 12000);
+    force.unref();
+    await app.locals.tripService.stop();
+    server.closeAllConnections();
+    server.close(() => {
+      tripStore.close();
+      clearTimeout(force);
+    });
+  });

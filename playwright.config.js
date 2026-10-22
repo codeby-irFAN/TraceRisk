@@ -18,7 +18,11 @@ export default defineConfig({
   webServer: {
     command: 'npm run server',
     url: 'http://127.0.0.1:4174/api/health',
-    env: { PORT: '4174' },
+    env: {
+      PORT: '4174',
+      TRACERISK_DB_PATH: ':memory:',
+      TRIP_WATCH_ENABLED: 'false',
+    },
     timeout: 30_000,
   },
 });
