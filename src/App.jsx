@@ -18,6 +18,7 @@ import {
   TriangleAlert,
   X,
 } from 'lucide-react';
+import logo from '../graphics/logo.png';
 import DateField from './components/DateField.jsx';
 import LocationChoices from './components/LocationChoices.jsx';
 import TravelNotebook from './components/TravelNotebook.jsx';
@@ -265,7 +266,7 @@ export default function App() {
       <header className="topbar">
         <a className="brand" href="#top" aria-label="TraceRisk home">
           <span className="brand-mark">
-            <Compass size={25} strokeWidth={1.6} />
+            <img src={logo} alt="" width="45" height="45" />
           </span>
           <span className="brand-name">
             TraceRisk<span>THE TRAVEL FIELD GUIDE</span>
@@ -660,7 +661,7 @@ export default function App() {
       </main>
       <footer className="site-footer">
         <a className="footer-brand" href="#top">
-          <Compass size={18} /> TraceRisk
+          <img src={logo} alt="" width="32" height="32" /> TraceRisk
         </a>
         <span>Made for the thoughtfully curious.</span>
         <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">

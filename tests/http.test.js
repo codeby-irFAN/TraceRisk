@@ -98,53 +98,51 @@ test('HTTP failures, provider fallback and cancellation', async (t) => {
   );
 
   await t.test(
-    'Gemini quota errors invoke Groq once without a Gemini retry',
+    'Groq is the only AI endpoint; quota failures are not retried and missing keys skip AI',
     async () => {
-      const previous = Object.fromEntries(
-        ['GEMINI_API_KEY', 'GROQ_API_KEY'].map((key) => [
-          key,
-          process.env[key],
-        ]),
-      );
-      process.env.GEMINI_API_KEY = 'test-only';
+      const previous = process.env.GROQ_API_KEY;
       process.env.GROQ_API_KEY = 'test-only';
       const calls = [];
-      const mock = t.mock.method(globalThis, 'fetch', async (url) => {
+      let quotaFailure = false;
+      const mock = t.mock.method(globalThis, 'fetch', async (url, options) => {
         calls.push(String(url));
-        if (String(url).includes('googleapis.com'))
+        assert.equal(options.headers.Authorization, 'Bearer test-only');
+        assert.equal(
+          JSON.parse(options.body).response_format.type,
+          'json_object',
+        );
+        if (quotaFailure)
           return Response.json(
             { error: { message: 'Quota exceeded' } },
             { status: 429 },
           );
         return Response.json({
-          choices: [
-            {
-              message: {
-                content: JSON.stringify({
-                  issues: [],
-                  briefing: 'Insufficient evidence.',
-                }),
-              },
-            },
-          ],
+          choices: [{ message: { content: JSON.stringify({ claims: [] }) } }],
         });
       });
+      const args = {
+        destination: 'Delhi',
+        startDate: '2026-10-22',
+        endDate: '2026-10-23',
+        sources: [],
+      };
       try {
-        const result = await scoreWithAI({
-          destination: 'Delhi',
-          startDate: '2026-10-22',
-          endDate: '2026-10-23',
-          sources: [],
-        });
+        const result = await scoreWithAI(args);
         assert.equal(result._providerUsed, 'Groq');
+        assert.equal(result._fallbackReason, null);
+        assert.deepEqual(calls, [
+          'https://api.groq.com/openai/v1/chat/completions',
+        ]);
+        quotaFailure = true;
+        await assert.rejects(scoreWithAI(args), /Groq:.*Quota exceeded/);
         assert.equal(calls.length, 2);
-        assert.match(result._fallbackReason, /Quota exceeded/);
+        delete process.env.GROQ_API_KEY;
+        assert.equal(await scoreWithAI(args), null);
+        assert.equal(calls.length, 2);
       } finally {
         mock.mock.restore();
-        for (const [key, value] of Object.entries(previous)) {
-          if (value === undefined) delete process.env[key];
-          else process.env[key] = value;
-        }
+        if (previous === undefined) delete process.env.GROQ_API_KEY;
+        else process.env.GROQ_API_KEY = previous;
       }
     },
   );

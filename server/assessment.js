@@ -1,40 +1,8 @@
-import {
-  DEFAULT_GEMINI_MODEL,
-  DEFAULT_GROQ_MODEL,
-  hasCredential,
-} from './config.js';
+import { DEFAULT_GROQ_MODEL, hasCredential } from './config.js';
 import { fetchJson, currentSignal } from './http.js';
 import { cleanText, clampNumber } from './utils.js';
 import { deterministicClaims, placeContext, verifyClaims } from './evidence.js';
 
-const schema = {
-  type: 'OBJECT',
-  required: ['claims'],
-  properties: {
-    claims: {
-      type: 'ARRAY',
-      maxItems: 8,
-      items: {
-        type: 'OBJECT',
-        required: ['citations'],
-        properties: {
-          citations: {
-            type: 'ARRAY',
-            maxItems: 3,
-            items: {
-              type: 'OBJECT',
-              required: ['sourceId', 'quote'],
-              properties: {
-                sourceId: { type: 'STRING' },
-                quote: { type: 'STRING' },
-              },
-            },
-          },
-        },
-      },
-    },
-  },
-};
 export function buildRiskAssessmentPrompt({
   destination,
   startDate,
@@ -80,109 +48,63 @@ function parse(content, provider) {
 }
 
 export async function scoreWithAI(args) {
+  if (!hasCredential('GROQ_API_KEY')) return null;
   const { system, user } = buildRiskAssessmentPrompt(args);
-  const plans = [];
-  if (hasCredential('GEMINI_API_KEY'))
-    plans.push({
-      provider: 'Gemini',
-      model: process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
-    });
-  if (hasCredential('GROQ_API_KEY'))
-    plans.push({
-      provider: 'Groq',
-      model: process.env.GROQ_MODEL || DEFAULT_GROQ_MODEL,
-    });
-  if (!plans.length) return null;
-  const failures = [],
-    attempts = [];
-  for (const [index, plan] of plans.entries()) {
-    currentSignal()?.throwIfAborted();
-    const started = Date.now();
-    const timeout = plans.length === 1 ? 6_000 : index === 0 ? 3_700 : 2_500;
-    try {
-      let content;
-      if (plan.provider === 'Gemini') {
-        const generationConfig = {
+  const model = process.env.GROQ_MODEL || DEFAULT_GROQ_MODEL;
+  const started = Date.now();
+  currentSignal()?.throwIfAborted();
+  try {
+    const data = await fetchJson(
+      'https://api.groq.com/openai/v1/chat/completions',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        retryRateLimit: false,
+        maxResponseBytes: 100_000,
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: user },
+          ],
           temperature: 0,
-          maxOutputTokens: 2200,
-          responseMimeType: 'application/json',
-          responseSchema: schema,
-        };
-        if (/^gemini-2\.5-flash/.test(plan.model))
-          generationConfig.thinkingConfig = { thinkingBudget: 0 };
-        const data = await fetchJson(
-          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(plan.model)}:generateContent`,
-          {
-            method: 'POST',
-            headers: {
-              'x-goog-api-key': process.env.GEMINI_API_KEY,
-              'Content-Type': 'application/json',
-            },
-            retryRateLimit: false,
-            maxResponseBytes: 100_000,
-            body: JSON.stringify({
-              systemInstruction: { parts: [{ text: system }] },
-              contents: [{ role: 'user', parts: [{ text: user }] }],
-              generationConfig,
-            }),
-          },
-          timeout,
-        );
-        content = (data?.candidates?.[0]?.content?.parts || [])
-          .filter((p) => !p.thought)
-          .map((p) => p.text || '')
-          .join('\n');
-      } else {
-        const data = await fetchJson(
-          'https://api.groq.com/openai/v1/chat/completions',
-          {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-              'Content-Type': 'application/json',
-            },
-            retryRateLimit: false,
-            maxResponseBytes: 100_000,
-            body: JSON.stringify({
-              model: plan.model,
-              messages: [
-                { role: 'system', content: system },
-                { role: 'user', content: user },
-              ],
-              temperature: 0,
-              response_format: { type: 'json_object' },
-              max_completion_tokens: 2200,
-              stream: false,
-            }),
-          },
-          timeout,
-        );
-        content = data?.choices?.[0]?.message?.content;
-      }
-      const result = parse(content, plan.provider);
-      attempts.push({
-        ...plan,
-        status: 'ok',
-        durationMs: Date.now() - started,
-      });
-      return {
-        ...result,
-        _providerUsed: plan.provider,
-        _modelUsed: plan.model,
-        _fallbackReason: failures.length ? failures.join(' | ') : null,
-        _attempts: attempts,
-      };
-    } catch (error) {
-      currentSignal()?.throwIfAborted();
-      failures.push(`${plan.provider}: ${cleanText(error.message, 180)}`);
-      attempts.push({
-        ...plan,
-        status: 'failed',
-        durationMs: Date.now() - started,
-      });
-    }
+          response_format: { type: 'json_object' },
+          max_completion_tokens: 2200,
+          stream: false,
+        }),
+      },
+      6_000,
+    );
+    return {
+      ...parse(data?.choices?.[0]?.message?.content, 'Groq'),
+      _providerUsed: 'Groq',
+      _modelUsed: model,
+      _fallbackReason: null,
+      _attempts: [
+        {
+          provider: 'Groq',
+          model,
+          status: 'ok',
+          durationMs: Date.now() - started,
+        },
+      ],
+    };
+  } catch (error) {
+    currentSignal()?.throwIfAborted();
+    throw Object.assign(new Error(`Groq: ${cleanText(error.message, 180)}`), {
+      attempts: [
+        {
+          provider: 'Groq',
+          model,
+          status: 'failed',
+          durationMs: Date.now() - started,
+        },
+      ],
+    });
   }
-  throw Object.assign(new Error(failures.join(' | ')), { attempts });
 }
 
 export function ruleBasedAssessment(args) {

@@ -8,20 +8,18 @@ The repository supports local development and an Express server that serves the 
 
 Run commands from the repository root. The server reads existing process variables and the local `.env` through dotenv. Use [.env.example](../.env.example) as the list of settings, replacing required placeholders and leaving unused optional credentials blank.
 
-| Variable                 | Default / purpose                                                                                                                               |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `TINYFISH_API_KEY`       | Required for web evidence; weather and next checks remain available without it.                                                                 |
-| `GEMINI_API_KEY`         | Optional primary AI review credential.                                                                                                          |
-| `GEMINI_MODEL`           | `gemini-2.5-flash`, the current code default identifier. Select a model available to the actual account and compatible with the request schema. |
-| `GROQ_API_KEY`           | Optional fallback or standalone AI credential.                                                                                                  |
-| `GROQ_MODEL`             | `openai/gpt-oss-20b`, the current primary Groq identifier.                                                                                      |
-| `OPEN_METEO_PROXY_URL`   | Empty for direct requests; optional Worker base URL.                                                                                            |
-| `OPEN_METEO_PROXY_TOKEN` | Required whenever a proxy URL is configured. Sent only by the backend to the proxy.                                                             |
-| `PORT`                   | `8787`; hosting platforms can supply their assigned port.                                                                                       |
-| `MAX_CONCURRENT_SCANS`   | `3`; accepts positive integers up to `20`.                                                                                                      |
-| `SCAN_RATE_LIMIT`        | `6` requests per client per window; accepts positive integers up to `100`.                                                                      |
-| `SCAN_RATE_WINDOW_MS`    | `600000`; accepts positive integers up to `86400000`.                                                                                           |
-| `TRUST_PROXY_HOPS`       | `0` for direct/local servers; positive integers up to `10` are supported for a fixed proxy topology.                                            |
+| Variable                 | Default / purpose                                                                                    |
+| ------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `TINYFISH_API_KEY`       | Required for web evidence; weather and next checks remain available without it.                      |
+| `GROQ_API_KEY`           | Optional credential for the sole AI provider.                                                        |
+| `GROQ_MODEL`             | `openai/gpt-oss-20b`, the current primary Groq identifier.                                           |
+| `OPEN_METEO_PROXY_URL`   | Empty for direct requests; optional Worker base URL.                                                 |
+| `OPEN_METEO_PROXY_TOKEN` | Required whenever a proxy URL is configured. Sent only by the backend to the proxy.                  |
+| `PORT`                   | `8787`; hosting platforms can supply their assigned port.                                            |
+| `MAX_CONCURRENT_SCANS`   | `3`; accepts positive integers up to `20`.                                                           |
+| `SCAN_RATE_LIMIT`        | `6` requests per client per window; accepts positive integers up to `100`.                           |
+| `SCAN_RATE_WINDOW_MS`    | `600000`; accepts positive integers up to `86400000`.                                                |
+| `TRUST_PROXY_HOPS`       | `0` for direct/local servers; positive integers up to `10` are supported for a fixed proxy topology. |
 
 Invalid scan-limit/proxy-count values fall back to the defaults. `TRUST_PROXY_HOPS=0` uses the direct peer address. Credential and model changes require restarting the server; browser theme and notebook preferences are unrelated to server settings.
 
@@ -35,7 +33,6 @@ Allow HTTPS access to the providers used by the configured workflow:
 | ------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | Search and extraction           | `api.search.tinyfish.ai`, `api.fetch.tinyfish.ai`                                                      |
 | Direct place/weather data       | `geocoding-api.open-meteo.com`, `api.open-meteo.com`, `flood-api.open-meteo.com`                       |
-| Gemini, when used               | `generativelanguage.googleapis.com`                                                                    |
 | Groq, when used                 | `api.groq.com`                                                                                         |
 | Optional external weather proxy | The hostname in `OPEN_METEO_PROXY_URL`; its Worker needs access to the corresponding Open-Meteo hosts. |
 
@@ -74,11 +71,11 @@ In networks that mandate an HTTP proxy, supported recent Node 24 releases can us
 - Build: `npm ci && npm run build`.
 - Start: `npm run server`.
 - Health path: `/api/health`.
-- Secure manual entry for `TINYFISH_API_KEY` and `GEMINI_API_KEY`.
+- Secure manual entry for `TINYFISH_API_KEY` and `GROQ_API_KEY`.
 - `TRUST_PROXY_HOPS=1` for the intended Render ingress path.
 - `NODE_OPTIONS=--dns-result-order=ipv4first`.
 
-Supply the requested values through Render settings. Optional Groq/model/proxy settings are not automatically populated by the blueprint; add them only when using those integrations. Model support must be checked against the configured provider account. Use a supported runtime and make build tools available during installation.
+Supply the requested values through Render settings. The blueprint requests the Groq key; optional model/proxy overrides must be supplied separately. Model support must be checked against the configured provider account. Use a supported runtime and make build tools available during installation.
 
 The health endpoint checks server configuration, not upstream authentication or scan success. Validate the deployed application with a real location lookup and representative scan after deployment. Incomplete coverage and provider failures should remain visible; do not treat a reachable homepage as proof that the scan works.
 

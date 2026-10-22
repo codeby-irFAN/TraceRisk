@@ -30,14 +30,9 @@ export function severityClass(value) {
 
 export function friendlyModelName(model) {
   if (!model || model === 'rules fallback') return 'Basic rules review';
-  if (
-    String(model).startsWith('Gemini · ') ||
-    String(model).startsWith('Groq · ')
-  )
-    return model;
+  if (String(model).startsWith('Groq · ')) return model;
   if (model === 'openai/gpt-oss-20b') return 'Groq · GPT-OSS 20B';
   if (model === 'openai/gpt-oss-120b') return 'Groq · GPT-OSS 120B';
-  if (String(model).startsWith('gemini-')) return `Gemini · ${model}`;
   return `AI · ${model}`;
 }
 

@@ -26,7 +26,6 @@ export const SCAN_STAGES = Object.freeze({
   assessment: 6_500,
 });
 export const CACHE_TTL_MS = 60_000;
-export const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
 export const DEFAULT_GROQ_MODEL = 'openai/gpt-oss-20b';
 export const ENGINE_VERSION = '4.0.0';
 

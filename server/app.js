@@ -12,7 +12,6 @@ import {
   SCAN_RATE_LIMIT,
   SCAN_RATE_WINDOW_MS,
   TRUST_PROXY_HOPS,
-  DEFAULT_GEMINI_MODEL,
   DEFAULT_GROQ_MODEL,
   ENGINE_VERSION,
   hasCredential,
@@ -74,29 +73,15 @@ export function createApp({
       service: 'TraceRisk API',
       engineVersion: ENGINE_VERSION,
       tinyfishConfigured: hasCredential('TINYFISH_API_KEY'),
-      llmConfigured:
-        hasCredential('GEMINI_API_KEY') || hasCredential('GROQ_API_KEY'),
-      geminiConfigured: hasCredential('GEMINI_API_KEY'),
+      llmConfigured: hasCredential('GROQ_API_KEY'),
       groqConfigured: hasCredential('GROQ_API_KEY'),
-      primaryProvider: hasCredential('GEMINI_API_KEY')
-        ? 'Google Gemini'
-        : hasCredential('GROQ_API_KEY')
-          ? 'Groq (Gemini not configured)'
-          : 'Rules-based only',
-      fallbackProvider:
-        hasCredential('GEMINI_API_KEY') && hasCredential('GROQ_API_KEY')
-          ? 'Groq'
-          : null,
-      providerOrder:
-        hasCredential('GEMINI_API_KEY') && hasCredential('GROQ_API_KEY')
-          ? ['Gemini', 'Groq']
-          : hasCredential('GEMINI_API_KEY')
-            ? ['Gemini']
-            : hasCredential('GROQ_API_KEY')
-              ? ['Groq']
-              : ['Rules'],
-      model: process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
-      fallbackModel: process.env.GROQ_MODEL || DEFAULT_GROQ_MODEL,
+      primaryProvider: hasCredential('GROQ_API_KEY')
+        ? 'Groq'
+        : 'Rules-based only',
+      fallbackProvider: null,
+      providerOrder: hasCredential('GROQ_API_KEY') ? ['Groq'] : ['Rules'],
+      model: process.env.GROQ_MODEL || DEFAULT_GROQ_MODEL,
+      fallbackModel: null,
       searchLanes: 8,
       maxWebSources: MAX_WEB_SOURCES,
       scanBudgetMs: REQUEST_BUDGET_MS,

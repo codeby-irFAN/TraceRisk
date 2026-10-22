@@ -22,7 +22,7 @@ Up to twelve pages are extracted concurrently in separate requests. One slow pag
 
 ## Assessment and provider fallback
 
-Optional Gemini (`gemini-2.5-flash` by default) selects quotations; configured Groq (`openai/gpt-oss-20b`) can take over. Neither AI is required. Each provider is attempted once within a combined 6.5-second assessment budget. With both configured, Gemini receives 3.7 seconds and Groq 2.5; a sole provider receives six seconds. Model overrides must be available to the actual account. The removed `GROQ_FALLBACK_MODEL` setting is no longer used.
+Groq is the only AI provider and optionally selects quotations (`openai/gpt-oss-20b` by default). Without a configured `GROQ_API_KEY`, deterministic verification runs directly. Groq is attempted once with a six-second timeout inside the 6.5-second assessment stage; failures return to deterministic verification without calling another AI provider. `GROQ_MODEL` must be available to the actual account.
 
 AI receives bounded source excerpts as untrusted data. It returns source IDs and exact quotations, not authoritative titles, narratives, scores or confidence percentages. Both AI-selected and deterministic candidate quotations pass the same checks:
 

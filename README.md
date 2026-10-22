@@ -24,7 +24,7 @@ Use this README for the current workflow; the recording is a separate demonstrat
 - **Keep your briefing:** download the complete findings and source links as text, or print the current filtered view with its limitations.
 - **Control the experience:** cancel a lookup or scan, switch between daylight and evening themes, and use the responsive interface with keyboard navigation and reduced-motion support.
 
-The visual theme uses flat ivory, forest green, and terracotta surfaces. The frontend uses React 19, Vite 7, Lucide icons, and CSS transitions; the backend uses Express 5 on Node.js.
+The visual theme uses flat ivory, forest green, and terracotta surfaces, with a generated map-pin and route emblem shared by the header, footer and favicon. The frontend uses React 19, Vite 7, Lucide icons, and CSS transitions; the backend uses Express 5 on Node.js.
 
 <details>
 <summary>View the current interface</summary>
@@ -69,14 +69,13 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }
 
 Edit `.env` before starting:
 
-| Setting                      | Needed for                                                                          |
-| ---------------------------- | ----------------------------------------------------------------------------------- |
-| `TINYFISH_API_KEY`           | Live search and webpage extraction; without it, weather and next checks still work. |
-| `GEMINI_API_KEY`             | Optional primary AI review.                                                         |
-| `GROQ_API_KEY`               | Optional fallback AI review; can also run without Gemini.                           |
-| `GEMINI_MODEL`, `GROQ_MODEL` | Optional model overrides; see [configuration](docs/DEPLOYMENT.md#configuration).    |
+| Setting            | Needed for                                                                          |
+| ------------------ | ----------------------------------------------------------------------------------- |
+| `TINYFISH_API_KEY` | Live search and webpage extraction; without it, weather and next checks still work. |
+| `GROQ_API_KEY`     | Optional AI quotation selection; the only supported AI provider.                    |
+| `GROQ_MODEL`       | Optional model overrides; see [configuration](docs/DEPLOYMENT.md#configuration).    |
 
-Replace required placeholders with valid credentials. Leave unused optional credentials blank; known placeholder values are treated as missing. Configuration flags still do not validate real credentials. Get keys through [TinyFish](https://agent.tinyfish.ai/), [Google AI Studio](https://aistudio.google.com/apikey), or [Groq Console](https://console.groq.com/keys). Keep real credentials in local or deployment settings, never in Git.
+Replace required placeholders with valid credentials. Leave unused optional credentials blank; known placeholder values are treated as missing. Configuration flags still do not validate real credentials. Get keys through [TinyFish](https://agent.tinyfish.ai/), [Groq Console](https://console.groq.com/keys). Keep real credentials in local or deployment settings, never in Git.
 
 Open-Meteo geocoding is needed to confirm a destination. Its public non-commercial geocoding, forecast, and flood endpoints do not require an API key. The optional external proxy is described in the [deployment guide](docs/DEPLOYMENT.md#optional-cloudflare-worker-proxy).
 
@@ -104,11 +103,11 @@ Trip planner
        ├── Open-Meteo forecasts for the confirmed coordinates
        ├── Deduplicate and select up to 12 relevant webpages
        ├── Extract each page independently in parallel
-       ├── Optional Gemini → Groq quotation selection + deterministic evidence checks
+       ├── Optional Groq quotation selection + deterministic evidence checks
        └── Checked quotations + useful source leads + forecasts + next checks
 ```
 
-Source-supported findings require fetched text, a matching place and date evidence. AI cannot invent the displayed facts or choose their scores. Gemini is primary when configured; Groq is optional, and rules-based assessment remains available without either AI key. Weather thresholds supplement the assessment. Default model identifiers are implementation settings, not a guarantee that a provider currently offers them to every account.
+Source-supported findings require fetched text, a matching place and date evidence. AI cannot invent the displayed facts or choose their scores. Groq is the only AI provider. It is optional: deterministic evidence checks remain available when its key is missing or a request fails. Weather thresholds supplement the assessment. Default model identifiers are implementation settings, not a guarantee that a provider currently offers them to every account.
 
 Collection status is `adequate`, `limited`, or `inconclusive`. These describe evidence coverage, not destination safety. A score of zero or an empty issue list is not an all-clear. The heuristic overall score and its limitations are explained in [DECISIONS.md](DECISIONS.md#risk-scoring).
 
@@ -134,7 +133,7 @@ To measure real provider performance separately from fixture tests:
 npm run benchmark:live -- --live
 ```
 
-This uses configured provider quota and writes ignored reports under `artifacts/benchmarks/`. See [evaluation](docs/EVALUATION.md) for measured examples and what they do not prove. The optional AI providers were not live-tested in this environment because no AI credentials were configured.
+This uses configured provider quota and writes ignored reports under `artifacts/benchmarks/`. See [evaluation](docs/EVALUATION.md) for measured examples and what they do not prove. Groq was not live-tested in this environment because its credential was not configured.
 
 ## Repository map
 

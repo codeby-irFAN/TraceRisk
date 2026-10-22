@@ -87,12 +87,11 @@ test('API validation and a complete scan with fixture providers', async (t) => {
   await t.test(
     'collects evidence, derives trip-date signals, and caches the scan',
     async () => {
-      const keys = ['TINYFISH_API_KEY', 'GEMINI_API_KEY', 'GROQ_API_KEY'];
+      const keys = ['TINYFISH_API_KEY', 'GROQ_API_KEY'];
       const previous = Object.fromEntries(
         keys.map((key) => [key, process.env[key]]),
       );
       process.env.TINYFISH_API_KEY = 'test-only';
-      delete process.env.GEMINI_API_KEY;
       delete process.env.GROQ_API_KEY;
       let externalCalls = 0;
       let searchCalls = 0;

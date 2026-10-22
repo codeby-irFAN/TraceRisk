@@ -12,15 +12,15 @@ Reports server configuration. It does not call providers or validate keys, model
 
 Relevant fields include:
 
-| Field                                                  | Meaning                                                    |
-| ------------------------------------------------------ | ---------------------------------------------------------- |
-| `ok`, `service`                                        | Server response status and service name.                   |
-| `tinyfishConfigured`                                   | A non-placeholder TinyFish credential is present.          |
-| `llmConfigured`, `geminiConfigured`, `groqConfigured`  | Non-placeholder assessment credentials are present.        |
-| `primaryProvider`, `fallbackProvider`, `providerOrder` | Configured assessment order.                               |
-| `model`, `fallbackModel`                               | Configured/default primary model names.                    |
-| `searchLanes`, `maxWebSources`, `scanBudgetMs`         | Collection and timing settings.                            |
-| `weatherProxyMode`, `weatherProxyConfigured`           | Direct/Worker routing and whether proxy URL/token are set. |
+| Field                                                  | Meaning                                                           |
+| ------------------------------------------------------ | ----------------------------------------------------------------- |
+| `ok`, `service`                                        | Server response status and service name.                          |
+| `tinyfishConfigured`                                   | A non-placeholder TinyFish credential is present.                 |
+| `llmConfigured`, `groqConfigured`                      | Non-placeholder assessment credentials are present.               |
+| `primaryProvider`, `fallbackProvider`, `providerOrder` | Groq when configured, otherwise Rules; fallback provider is null. |
+| `model`, `fallbackModel`                               | Configured/default Groq model; fallbackModel is null.             |
+| `searchLanes`, `maxWebSources`, `scanBudgetMs`         | Collection and timing settings.                                   |
+| `weatherProxyMode`, `weatherProxyConfigured`           | Direct/Worker routing and whether proxy URL/token are set.        |
 
 Key and token values are not returned. Known template placeholders are treated as missing; a configured flag can still be true for an invalid key.
 

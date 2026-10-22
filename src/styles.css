@@ -172,11 +172,23 @@ h2 {
 .brand-mark {
   width: 45px;
   height: 45px;
+  flex-shrink: 0;
   display: grid;
   place-items: center;
-  background: var(--accent);
-  color: var(--accent-ink);
-  border-radius: 50%;
+  background: #f6f4ed;
+  border-radius: 12px;
+}
+.brand-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.footer-brand img {
+  display: block;
+  background: #f6f4ed;
+  border-radius: 8px;
+  object-fit: contain;
 }
 .brand-name {
   font-size: 23px;

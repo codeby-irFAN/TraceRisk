@@ -14,7 +14,7 @@ Travel-relevant information is spread across transport updates, government notic
 
 ## The approach
 
-TraceRisk first asks the traveller to confirm the resolved city, district, and state. Eight targeted TinyFish search lanes then collect travel-relevant leads alongside Open-Meteo daily forecast and river-discharge data for the same location. The backend selects and extracts source pages, attempts Gemini and optional Groq review, and can fall back to labelled deterministic triage. Findings retain source links and collection context.
+TraceRisk first asks the traveller to confirm the resolved city, district, and state. Eight targeted TinyFish search lanes then collect travel-relevant leads alongside Open-Meteo daily forecast and river-discharge data for the same location. The backend selects and extracts source pages, attempts optional Groq review, and can fall back to labelled deterministic triage. Findings retain source links and collection context.
 
 The interface uses an ivory, forest-green, and terracotta travel-journal theme with dark mode, keyboard access, responsive layouts, and reduced-motion behavior.
 
@@ -37,7 +37,7 @@ The interface uses an ivory, forest-green, and terracotta travel-journal theme w
 | Interface                | React 19, Vite 7, Lucide React, CSS themes and transitions.                                            |
 | Server                   | Node.js and Express 5; Node.js 24 used in CI.                                                          |
 | Discovery and extraction | TinyFish Search and Fetch.                                                                             |
-| Assessment               | Gemini primary, optional Groq, deterministic fallback.                                                 |
+| Assessment               | Groq quotation selection, deterministic fallback.                                                      |
 | Place and forecasts      | Open-Meteo geocoding, daily forecasts, and river-discharge models; optional external Worker transport. |
 | Verification             | Node's test runner, Playwright/Chromium, Prettier, and production builds.                              |
 

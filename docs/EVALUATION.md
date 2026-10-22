@@ -6,7 +6,7 @@ Version 4 has regression-tested evidence checks and a twenty-second processing b
 
 ## Live sample: 22 October 2026
 
-Measured with Node.js 24, TinyFish Search/Fetch and public Open-Meteo endpoints. No Gemini or Groq credentials were configured, so these scans used deterministic quotation verification. Trips covered 22–23 October 2026. The benchmark selected the first ranked location for each explicit query; the normal UI requires a user confirmation.
+Measured with Node.js 24, TinyFish Search/Fetch and public Open-Meteo endpoints. No AI credentials were configured, so these scans used deterministic quotation verification. Trips covered 22–23 October 2026. The benchmark selected the first ranked location for each explicit query; the normal UI requires a user confirmation.
 
 | Confirmed destination     | Lookup | Scan   | Opened pages | Source leads | Forecast days | Web coverage |
 | ------------------------- | ------ | ------ | ------------ | ------------ | ------------- | ------------ |
@@ -45,7 +45,7 @@ The completed change passes 58 Node tests, 13 Playwright browser tests, the prod
 - Location confirmation, API input limits, quotas, request headers and saved-plan behavior.
 - Sparse-result briefings, mobile widths, themes, filters, downloads and printing.
 
-The provider fallback test simulates Gemini quota failure and Groq success. It does not validate live model access, response quality or paid-account limits. Unit latency checks use shortened deterministic budgets; live samples use the actual twenty-second budget.
+Provider tests check Groq success, a quota failure without retries, and skipping AI when its key is missing. It does not validate live model access, response quality or paid-account limits. Unit latency checks use shortened deterministic budgets; live samples use the actual twenty-second budget.
 
 ## What still needs validation before a public safety claim
 
