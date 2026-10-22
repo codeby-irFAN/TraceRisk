@@ -200,3 +200,11 @@ Configured deployments retain the same trip/workspace HTTP API while storing dat
 - `POST /api/auth/reset-password`: `{newPassword}`; requires the short-lived HttpOnly recovery grant from a successful callback and the corresponding current session.
 
 These mutations require the existing `X-TraceRisk-Request: 1` header and accepted Origin. A malformed/expired recovery link returns to the app with a plain-language error. `/api/health` reports `storageProvider` (`sqlite` or `supabase`) and scheduler capability, without secret values. SMTP/email settings and live schema readiness require separate verification.
+
+## Thorough checks and Google login (v5.3)
+
+`POST /api/trips/:id/check` accepts `{scanMode:"quick"}` (default) or `{scanMode:"thorough"}`. Other values return 400. This starts a background job with the existing 202/polling flow; the HTTP request does not wait for the scan. `GET /api/trips/:id` includes `progress` while the local process owns a job: `{scanMode,kind,phase,startedAt,completed,total}`. Counters track places, not a fabricated percentage. Progress is process-local; completed results remain in the database with `latest.scanMode`. Quick checks use a 110-second itinerary budget; Thorough uses 480 seconds and a 540-second lease. Cancellation preserves the previous completed briefing. A Thorough result is never served from the Quick cache and makes fresh source requests.
+
+Supabase's migration adds the server-only `claimLong` operation. Reapply the idempotent SQL migration before enabling longer scans. Quick check API behaviour stays compatible with the previous schema. Independent news services are best effort and are not substitutes for original article verification.
+
+`POST /api/auth/google` (Supabase mode) checks provider availability and returns a validated Supabase OAuth authorization `{url}`. It sets an HttpOnly PKCE verifier cookie, requires the usual mutation header/Origin checks, and uses the existing `/auth/callback` exchange. A disabled provider returns 503 with an email-sign-in alternative. Configure Google OAuth credentials only in Supabase as described in [GOOGLE_SIGN_IN.md](GOOGLE_SIGN_IN.md).

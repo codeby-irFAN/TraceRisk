@@ -41,6 +41,11 @@ export function createSupabaseStore({
       action,
       args,
     });
+    if (error && action === 'claimLong' && error.code === '22023')
+      throw tripError(
+        'Thorough checks need the latest database setup. Please contact the site administrator.',
+        503,
+      );
     if (error) {
       const status =
         error.code === '42501'
@@ -112,8 +117,12 @@ export function createSupabaseStore({
     remove(workspace, id) {
       return call('remove', { workspace, id });
     },
-    claim(workspace, id) {
-      return call('claim', { workspace, id });
+    claim(workspace, id, leaseMs = 180000) {
+      return call(leaseMs > 180000 ? 'claimLong' : 'claim', {
+        workspace,
+        id,
+        leaseMs,
+      });
     },
     release(workspace, id) {
       return call('release', { workspace, id });

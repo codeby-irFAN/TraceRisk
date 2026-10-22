@@ -130,7 +130,7 @@ export async function searchTinyFish(group) {
               headers: { 'X-API-Key': process.env.TINYFISH_API_KEY },
               retryRateLimit: false,
             },
-            SEARCH_TIMEOUT_MS,
+            group.timeoutMs || SEARCH_TIMEOUT_MS,
           );
           const rows = data?.results ?? data?.data?.results;
           if (!Array.isArray(rows))
@@ -165,7 +165,7 @@ export async function searchTinyFish(group) {
             )
             .slice(0, 10);
         }),
-      SEARCH_TIMEOUT_MS,
+      group.timeoutMs || SEARCH_TIMEOUT_MS,
       'Search attempt exceeded its time budget.',
     );
   let firstError;
@@ -276,9 +276,13 @@ export function rankAndSelectCandidates(
   return selected;
 }
 
-export async function fetchTinyFish(sources) {
+export async function fetchTinyFish(
+  sources,
+  { timeoutMs = FETCH_TIMEOUT_MS, onPartial } = {},
+) {
   const results = new Map(),
     errors = [];
+  onPartial?.({ results, errors, requestError: null });
   const batches = [];
   for (let i = 0; i < sources.length; i += FETCH_BATCH_SIZE)
     batches.push(sources.slice(i, i + FETCH_BATCH_SIZE));
@@ -304,10 +308,10 @@ export async function fetchTinyFish(sources) {
                     image_links: false,
                   }),
                 },
-                FETCH_TIMEOUT_MS,
+                timeoutMs,
               ),
             ),
-          FETCH_TIMEOUT_MS,
+          timeoutMs,
           'Page extraction exceeded its time budget.',
         );
         currentSignal()?.throwIfAborted();

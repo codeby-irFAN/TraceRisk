@@ -115,6 +115,7 @@ test('plan, check, inspect evidence, compare, ask and share a trip', async ({
       });
     }
     if (path.endsWith('/check')) {
+      expect(r.request().postDataJSON().scanMode).toBe('thorough');
       trip.latest = structuredClone(latest);
       trip.timeline = [
         {
@@ -169,6 +170,7 @@ test('plan, check, inspect evidence, compare, ask and share a trip', async ({
   await page.getByRole('button', { name: 'Find place' }).click();
   await page.getByRole('button', { name: /Delhi · India/ }).click();
   await page.getByRole('button', { name: 'Save itinerary' }).click();
+  await page.getByLabel('Check type', { exact: true }).selectOption('thorough');
   await page.getByRole('button', { name: 'Check trip', exact: true }).click();
   await expect(
     page.getByRole('heading', { name: 'Review this part of your plan' }),
@@ -322,12 +324,7 @@ test('account sign-in persists across reload, signs out and protects saved trips
   await expect(
     page.getByRole('button', { name: 'Create account', exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole('button', {
-      name: 'Already have an account? Sign in',
-      exact: true,
-    })
-    .click();
+  await page.getByRole('tab', { name: 'Sign in', exact: true }).click();
   await page
     .getByLabel('Email', { exact: true })
     .fill('account-browser@example.com');
@@ -417,6 +414,42 @@ test('Supabase confirmation and forgot-password screens explain the next step', 
   await expect(
     page.getByRole('button', { name: 'New trip', exact: true }),
   ).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: 'Continue with Google', exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+  await page.screenshot({
+    path: '/tmp/tracerisk-google-desktop.png',
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+  await page.screenshot({
+    path: '/tmp/tracerisk-google-mobile.png',
+    fullPage: true,
+  });
+  await page.route('**/api/auth/google', (r) =>
+    r.fulfill({
+      status: 503,
+      json: {
+        error:
+          'Google sign-in is not enabled yet. Please use email and password.',
+      },
+    }),
+  );
+  await page
+    .getByRole('button', { name: 'Continue with Google', exact: true })
+    .click();
+  await expect(
+    page.getByText(
+      'Google sign-in is not enabled yet. Please use email and password.',
+    ),
+  ).toBeVisible();
   await page
     .getByRole('button', { name: 'Forgot password?', exact: true })
     .click();

@@ -993,3 +993,110 @@
     font-size: 44px;
   }
 }
+.trip-workspace .auth-card button {
+  transform: none;
+  min-height: 44px;
+  white-space: normal;
+  line-height: 1.4;
+  text-align: center;
+  letter-spacing: 0;
+  font-weight: 500;
+}
+.trip-workspace .auth-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.trip-workspace .auth-card label {
+  font: 500 13px/1.5 var(--body);
+  letter-spacing: 0;
+  color: var(--ink);
+  margin: 10px 0;
+}
+.trip-workspace .auth-card label input {
+  min-height: 46px;
+}
+.trip-workspace .auth-card .auth-switch {
+  display: flex;
+  width: 100%;
+  padding: 10px 6px;
+  align-items: center;
+  justify-content: center;
+  margin: 4px 0;
+}
+.trip-workspace .google-signin {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 20px;
+  padding: 12px;
+  border: 1px solid var(--line);
+}
+.google-signin svg {
+  flex: 0 0 20px;
+}
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 11px;
+  margin: 18px 0 8px;
+}
+.auth-divider:before,
+.auth-divider:after {
+  content: '';
+  height: 1px;
+  flex: 1;
+  background: var(--line);
+}
+.trip-workspace .scan-mode-label {
+  margin: 0;
+  font-size: 11px;
+  min-width: 210px;
+}
+.trip-workspace .detail-heading > .inline {
+  flex-wrap: wrap;
+  align-items: end;
+}
+.trip-workspace .scan-mode-label select {
+  font-size: 12px;
+  max-width: 290px;
+}
+@media (max-width: 720px) {
+  .trip-workspace .detail-heading > .inline {
+    width: 100%;
+  }
+  .trip-workspace .scan-mode-label {
+    flex: 1 1 100%;
+  }
+  .trip-workspace .scan-mode-label select {
+    max-width: none;
+  }
+}
+.auth-mode-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  border-radius: 10px;
+  margin-bottom: 24px;
+}
+.trip-workspace .auth-mode-tabs button {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  border-radius: 7px;
+  margin: 0;
+  min-height: 40px;
+  font-size: 12px;
+}
+.trip-workspace .auth-mode-tabs button[aria-selected='true'] {
+  background: var(--surface);
+  box-shadow: 0 1px 6px #0001;
+  font-weight: 600;
+  color: var(--accent);
+}

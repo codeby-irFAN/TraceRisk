@@ -1,3 +1,4 @@
+import { searchThorough } from './thorough-search.js';
 import { performance } from 'node:perf_hooks';
 import { fetchEnvironmentalContext } from './environment.js';
 import {
@@ -10,6 +11,7 @@ import {
   SCAN_STAGES,
   REQUEST_BUDGET_MS,
   ENGINE_VERSION,
+  hasCredential,
 } from './config.js';
 import {
   buildQueries,
@@ -72,6 +74,8 @@ export function createAnalyzer({
     ? fetchEnvironmentalContext
     : async () => ({ sources: [], issues: [], meta: {} }),
   stages = SCAN_STAGES,
+  budgetMs = REQUEST_BUDGET_MS,
+  maxSources = MAX_WEB_SOURCES,
   now = Date.now,
 } = {}) {
   return async (trip) =>
@@ -84,6 +88,16 @@ export function createAnalyzer({
         const timings = {};
         const stage = async (name, ms, task) => {
           const start = performance.now();
+          trip.onProgress?.(
+            name.startsWith('search:')
+              ? 'Finding local reports'
+              : {
+                  weather: 'Checking weather',
+                  environment: 'Checking environmental updates',
+                  extraction: 'Reading original reports',
+                  assessment: 'Reviewing evidence',
+                }[name] || 'Checking your trip',
+          );
           try {
             const value = await withRequestBudget(
               task,
@@ -138,13 +152,18 @@ export function createAnalyzer({
         const candidates = rankAndSelectCandidates(
           rows,
           trip.destination,
-          MAX_WEB_SOURCES,
+          maxSources,
           trip.location,
           collectedAt,
         );
+        let partialExtraction = { results: new Map(), errors: [] };
         const extraction = candidates.length
           ? await stage('extraction', stages.extraction, () =>
-              extract(candidates),
+              extract(candidates, {
+                onPartial: (value) => {
+                  partialExtraction = value;
+                },
+              }),
             )
           : {
               status: 'fulfilled',
@@ -154,11 +173,13 @@ export function createAnalyzer({
           extraction.status === 'fulfilled'
             ? extraction.value
             : {
-                results: new Map(),
-                errors: candidates.map((s) => ({
-                  url: s.url,
-                  error: 'Extraction did not finish in time.',
-                })),
+                results: new Map(partialExtraction.results),
+                errors: candidates
+                  .filter((s) => !partialExtraction.results.has(s.url))
+                  .map((s) => ({
+                    url: s.url,
+                    error: 'Extraction did not finish in time.',
+                  })),
                 requestError: cleanText(extraction.reason.message, 180),
               };
         const web = candidates.map((s, i) =>
@@ -362,7 +383,7 @@ export function createAnalyzer({
             weatherApi: weatherBundle.meta,
           },
           performance: {
-            budgetMs: REQUEST_BUDGET_MS,
+            budgetMs,
             elapsedMs: Math.round(performance.now() - started),
             stages: timings,
           },
@@ -370,11 +391,48 @@ export function createAnalyzer({
           disclaimer:
             'TraceRisk provides travel information, not an official safety rating or a guarantee of safety. Source quotations are checked against retrieved text, not independently fact-checked. Weather signals are model-derived; confirm important decisions with authorities and operators.',
         };
+        result.scanMode = trip.scanMode === 'thorough' ? 'thorough' : 'quick';
         result.decision = decisionFor(result);
+        result.retrievalProviders = searches.flatMap((r, i) =>
+          (
+            r.value?.providers || [
+              {
+                provider: 'TinyFish',
+                status: r.status === 'fulfilled' ? 'checked' : 'unavailable',
+                leads: r.value?.length || 0,
+              },
+            ]
+          ).map((provider) => ({ ...provider, category: groups[i].label })),
+        );
+        trip.onProgress?.('Preparing your briefing');
         return result;
       },
-      REQUEST_BUDGET_MS - 500,
+      budgetMs - 500,
       'The scan could not finish within its processing budget.',
     );
 }
-export const analyzeTrip = createAnalyzer();
+const quickAnalyzer = createAnalyzer();
+const thoroughAnalyzer = createAnalyzer({
+  search: searchThorough,
+  extract: (rows, options) =>
+    hasCredential('TINYFISH_API_KEY')
+      ? fetchTinyFish(rows, { ...options, timeoutMs: 12000 })
+      : Promise.resolve({
+          results: new Map(),
+          errors: rows.map((row) => ({
+            url: row.url,
+            error: 'Original page not retrieved.',
+          })),
+          requestError: 'Original-page extraction is not configured.',
+        }),
+  budgetMs: 90000,
+  maxSources: 28,
+  stages: {
+    search: 22000,
+    extraction: 40000,
+    weather: 14000,
+    assessment: 10000,
+  },
+});
+export const analyzeTrip = (trip) =>
+  (trip.scanMode === 'thorough' ? thoroughAnalyzer : quickAnalyzer)(trip);

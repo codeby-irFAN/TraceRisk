@@ -189,13 +189,18 @@ export function createTripStore({
           .run(workspace, id).changes > 0
       );
     },
-    claim(workspace, id) {
+    claim(workspace, id, leaseMs = 180000) {
       return (
         db
           .prepare(
             'UPDATE trips SET lock_until=? WHERE id=? AND workspace=? AND lock_until<=?',
           )
-          .run(now() + 180000, id, workspace, now()).changes > 0
+          .run(
+            now() + Math.min(600000, Math.max(180000, leaseMs)),
+            id,
+            workspace,
+            now(),
+          ).changes > 0
       );
     },
     release(workspace, id) {

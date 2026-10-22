@@ -140,6 +140,33 @@ export function Report({ report, detailed = false }) {
           </p>
         ))}
       </details>
+      {detailed && result.retrievalProviders?.length > 0 && (
+        <details>
+          <summary>Where we looked</summary>
+          {[...new Set(result.retrievalProviders.map((p) => p.provider))].map(
+            (name) => {
+              const checks = result.retrievalProviders.filter(
+                  (p) => p.provider === name,
+                ),
+                done = checks.filter((p) => p.status === 'checked').length;
+              return (
+                <p key={name}>
+                  <strong>{name}</strong> ·{' '}
+                  {done === checks.length
+                    ? 'Checked'
+                    : done
+                      ? 'Some searches were unavailable'
+                      : 'Could not reach this service'}
+                </p>
+              );
+            },
+          )}
+          <p className="muted">
+            We keep the reports and forecasts that load successfully. A failed
+            service does not mean there are no travel issues.
+          </p>
+        </details>
+      )}
       {detailed && (
         <details>
           <summary>
@@ -206,6 +233,7 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
   const latest = trip.latest;
+  const [scanMode, setScanMode] = useState('quick');
   async function run(fn) {
     setBusy(true);
     setError('');
@@ -235,10 +263,24 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
           <button disabled={trip.checking} onClick={onEdit}>
             Edit trip
           </button>
+          <label className="scan-mode-label">
+            Check type
+            <select
+              aria-label="Check type"
+              value={scanMode}
+              disabled={trip.checking}
+              onChange={(e) => setScanMode(e.target.value)}
+            >
+              <option value="quick">Quick · around 20 seconds per place</option>
+              <option value="thorough">
+                Thorough · more sources, up to 8 minutes
+              </option>
+            </select>
+          </label>
           <button
             className="primary"
             disabled={trip.checking}
-            onClick={() => act('check')}
+            onClick={() => act('check', { scanMode })}
           >
             {trip.checking
               ? 'Checking…'
@@ -250,8 +292,18 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
       </div>
       {trip.checking && (
         <div className="notice" role="status">
-          Collecting evidence for each stop and supported road checkpoints. Full
-          itineraries can take up to two minutes.{' '}
+          <strong>{trip.progress?.phase || 'Collecting travel updates'}</strong>
+          <p>
+            {trip.progress?.scanMode === 'thorough'
+              ? 'Thorough check: reading more sources. Large itineraries can take up to 8 minutes.'
+              : 'Checking your stops and nearby route areas. Large itineraries can take up to 2 minutes.'}
+          </p>
+          {trip.progress?.total > 0 && (
+            <p>
+              {trip.progress.completed || 0} of {trip.progress.total} places
+              reviewed
+            </p>
+          )}{' '}
           <button onClick={() => act('cancel')}>Cancel check</button>
         </div>
       )}
@@ -265,7 +317,11 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
           ● Trip Watch{' '}
           {trip.watchEnded ? 'finished' : trip.watch.enabled ? 'on' : 'paused'}
         </span>
-        <span>Last check: {when(latest?.checkedAt)}</span>
+        <span>
+          Last check: {when(latest?.checkedAt)}
+          {latest?.scanMode &&
+            ` · ${latest.scanMode === 'thorough' ? 'Thorough' : 'Quick'}`}
+        </span>
         <span>
           Next check:{' '}
           {trip.watchEnded
@@ -372,7 +428,7 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
               <button
                 className="primary"
                 disabled={trip.checking}
-                onClick={() => act('check')}
+                onClick={() => act('check', { scanMode })}
               >
                 Start first check
               </button>

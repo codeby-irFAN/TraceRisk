@@ -91,7 +91,14 @@ export function createTripRouter({ store, service, locationResolver, auth }) {
     if (!req.trip) return next(tripError('Trip not found.', 404));
     next();
   });
-  router.get('/trips/:id', async (req, res) => res.json({ trip: req.trip }));
+  router.get('/trips/:id', async (req, res) =>
+    res.json({
+      trip: {
+        ...req.trip,
+        progress: service.progress(req.workspace.id, req.trip.id),
+      },
+    }),
+  );
   router.put('/trips/:id', async (req, res) => {
     if (req.trip.checking)
       throw tripError(
@@ -149,7 +156,11 @@ export function createTripRouter({ store, service, locationResolver, auth }) {
   });
   router.post('/trips/:id/check', async (req, res) => {
     checkLimit.consume(req.workspace.id);
-    res.status(202).json(await service.check(req.workspace.id, req.trip.id));
+    res.status(202).json(
+      await service.check(req.workspace.id, req.trip.id, {
+        scanMode: req.body?.scanMode || 'quick',
+      }),
+    );
   });
   router.post('/trips/:id/compare', async (req, res) => {
     checkLimit.consume(req.workspace.id);

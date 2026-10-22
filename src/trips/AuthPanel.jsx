@@ -51,6 +51,33 @@ export default function AuthPanel({ onSignedIn, provider = 'local' }) {
         </div>
       </div>
       <div className="trip-card auth-card">
+        {mode !== 'forgot' && (
+          <div
+            className="auth-mode-tabs"
+            role="tablist"
+            aria-label="Account access"
+          >
+            {[
+              ['login', 'Sign in'],
+              ['register', 'Create account'],
+            ].map(([value, label]) => (
+              <button
+                type="button"
+                role="tab"
+                key={value}
+                aria-selected={mode === value}
+                disabled={busy}
+                onClick={() => {
+                  setMode(value);
+                  setError('');
+                  setMessage('');
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         <h2>
           {mode === 'register'
             ? 'Create your account'
@@ -65,6 +92,57 @@ export default function AuthPanel({ onSignedIn, provider = 'local' }) {
               ? 'Enter your email to receive a reset link.'
               : 'Sign in to see your saved trips.'}
         </p>
+        {provider === 'supabase' && mode !== 'forgot' && (
+          <>
+            <button
+              type="button"
+              className="google-signin"
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                setError('');
+                try {
+                  const data = await api('/auth/google', {});
+                  const target = new URL(data.url);
+                  if (target.protocol !== 'https:')
+                    throw new Error('Google sign-in could not start.');
+                  window.location.assign(target.href);
+                } catch (e) {
+                  setError(e.message);
+                  setBusy(false);
+                }
+              }}
+            >
+              <svg
+                aria-hidden="true"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  fill="#4285F4"
+                  d="M21.6 12.2c0-.7-.1-1.4-.2-2.1H12v4h5.4a4.6 4.6 0 0 1-2 3v2.6h3.4c2-1.8 2.8-4.4 2.8-7.5z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 22c2.7 0 5-.9 6.8-2.3l-3.4-2.6c-.9.6-2 .9-3.4.9-2.6 0-4.8-1.8-5.6-4.2H3v2.7A10.2 10.2 0 0 0 12 22z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M6.4 13.8a6 6 0 0 1 0-3.6V7.5H3a10 10 0 0 0 0 9z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 6c1.5 0 2.8.5 3.8 1.5l2.9-2.9A9.8 9.8 0 0 0 12 2a10.2 10.2 0 0 0-9 5.5l3.4 2.7C7.2 7.8 9.4 6 12 6z"
+                />
+              </svg>
+              Continue with Google
+            </button>
+            <div className="auth-divider">
+              <span>or use email</span>
+            </div>
+          </>
+        )}
         <form onSubmit={submit}>
           {mode === 'register' && (
             <label>
@@ -84,7 +162,6 @@ export default function AuthPanel({ onSignedIn, provider = 'local' }) {
           </label>
           {mode !== 'forgot' && (
             <>
-              {' '}
               <label>
                 Password
                 <input
@@ -121,27 +198,20 @@ export default function AuthPanel({ onSignedIn, provider = 'local' }) {
                   : 'Sign in'}
           </button>
         </form>
-        <button
-          className="auth-switch"
-          disabled={busy}
-          onClick={() => {
-            setMode((m) =>
-              m === 'forgot'
-                ? 'login'
-                : m === 'register'
-                  ? 'login'
-                  : 'register',
-            );
-            setError('');
-            setMessage('');
-          }}
-        >
-          {mode === 'register'
-            ? 'Already have an account? Sign in'
-            : mode === 'forgot'
-              ? 'Back to sign in'
-              : 'New here? Create an account'}
-        </button>
+        {mode === 'forgot' && (
+          <button
+            type="button"
+            className="auth-switch"
+            disabled={busy}
+            onClick={() => {
+              setMode('login');
+              setError('');
+              setMessage('');
+            }}
+          >
+            Back to sign in
+          </button>
+        )}
         {provider === 'supabase' && mode === 'login' && (
           <button
             className="auth-switch"

@@ -177,8 +177,9 @@ export function createTripService({
   let starting = 0,
     interval = null,
     ticking = false;
-  async function inspect(target, preferences) {
+  async function inspect(target, preferences, scanMode = 'quick', onProgress) {
     const key = JSON.stringify([
+      scanMode,
       locationLabel(target.location),
       target.location.latitude,
       target.location.longitude,
@@ -187,10 +188,13 @@ export function createTripService({
     ]);
     const hit = scanCache.get(key);
     let result;
-    if (hit && now() - hit.time < 300000) result = structuredClone(hit.result);
+    if (scanMode === 'quick' && hit && now() - hit.time < 300000)
+      result = structuredClone(hit.result);
     else {
       const promise = gate(() =>
         scan({
+          scanMode,
+          onProgress,
           destination: locationLabel(target.location),
           location: target.location,
           startDate: target.startDate,
@@ -206,7 +210,7 @@ export function createTripService({
       try {
         result = structuredClone(await promise);
         currentSignal()?.throwIfAborted();
-        if (result.resultStatus !== 'unavailable')
+        if (scanMode === 'quick' && result.resultStatus !== 'unavailable')
           scanCache.set(key, { result: structuredClone(result), time: now() });
       } catch (error) {
         scanCache.delete(key);
@@ -228,7 +232,12 @@ export function createTripService({
     result.decision ||= decisionFor(result);
     return result;
   }
-  async function collect(trip, routeIndex = 0) {
+  async function collect(
+    trip,
+    routeIndex = 0,
+    scanMode = 'quick',
+    progress = {},
+  ) {
     const targetStops = trip.stops.map((s) => ({
       ...s,
       key: s.id,
@@ -244,12 +253,23 @@ export function createTripService({
         endDate: trip.stops[0].startDate,
         kind: 'origin',
       });
+    progress.total = targetStops.length;
+    progress.completed = 0;
+    const inspectTarget = async (target) => {
+      try {
+        return await inspect(target, trip.preferences, scanMode, (phase) => {
+          progress.phase = phase;
+        });
+      } catch (error) {
+        return unavailableReport(target, error);
+      } finally {
+        progress.completed++;
+      }
+    };
     // Start stop analysis while route geometry and corridor place lookups run.
     const stopWork = targetStops.map(async (target) => ({
       ...target,
-      result: await inspect(target, trip.preferences).catch((error) =>
-        unavailableReport(target, error),
-      ),
+      result: await inspectTarget(target),
     }));
     let routing;
     try {
@@ -292,23 +312,32 @@ export function createTripService({
       routeData.notes.push(
         'Intermediate road checkpoints use their leg’s departure-to-arrival dates. Up to two sampled areas are checked; this is not continuous coverage of every road segment.',
       );
+    progress.total = targetStops.length + extra.length;
     const reports = await Promise.all([
       ...stopWork,
       ...extra.map(async (target) => ({
         ...target,
-        result: await inspect(target, trip.preferences).catch((error) =>
-          unavailableReport(target, error),
-        ),
+        result: await inspectTarget(target),
       })),
     ]);
     return {
       checkedAt: new Date(now()).toISOString(),
+      scanMode,
       reports,
       route: routeData,
       ...snapshotSummary(reports),
     };
   }
-  async function launch(workspace, trip, kind, task) {
+  async function launch(
+    workspace,
+    trip,
+    kind,
+    task,
+    scanMode = 'quick',
+    progress = {},
+  ) {
+    if (jobs.has(`${workspace}:${trip.id}`))
+      throw tripError('This trip is already being checked.', 409);
     if (jobs.size + starting >= 2)
       throw tripError(
         'Two trip checks are already running. Try again shortly.',
@@ -317,7 +346,11 @@ export function createTripService({
     starting++;
     let claimed;
     try {
-      claimed = await store.claim(workspace, trip.id);
+      claimed = await store.claim(
+        workspace,
+        trip.id,
+        scanMode === 'thorough' ? 540000 : 180000,
+      );
     } finally {
       starting--;
     }
@@ -326,7 +359,7 @@ export function createTripService({
     const key = `${workspace}:${trip.id}`;
     const promise = withRequestBudget(
       task,
-      110000,
+      scanMode === 'thorough' ? 480000 : 110000,
       'Trip check reached its time limit. Your last briefing is preserved.',
       controller.signal,
     )
@@ -349,43 +382,70 @@ export function createTripService({
           '[TraceRisk] Trip storage could not be reached; previous results are preserved.',
         );
       });
-    jobs.set(key, { promise, controller, kind });
+    jobs.set(key, {
+      promise,
+      controller,
+      kind,
+      progress: { ...progress },
+      scanMode,
+    });
+    jobs.get(key).progress = progress;
     return { status: 'checking', kind };
   }
   const service = {
     status: () => ({ activeChecks: jobs.size, monitoring: Boolean(interval) }),
-    async check(workspace, id) {
+    progress(workspace, id) {
+      const job = jobs.get(`${workspace}:${id}`);
+      return job
+        ? { ...job.progress, scanMode: job.scanMode, kind: job.kind }
+        : null;
+    },
+    async check(workspace, id, { scanMode = 'quick' } = {}) {
+      if (!['quick', 'thorough'].includes(scanMode))
+        throw tripError('Choose Quick or Thorough check.');
+      const progress = {
+        startedAt: new Date(now()).toISOString(),
+        phase: 'Preparing your trip',
+        scanMode,
+      };
       const trip = await store.get(workspace, id);
       if (!trip) throw tripError('Trip not found.', 404);
-      return launch(workspace, trip, 'check', async () => {
-        const latest = await collect(trip);
-        currentSignal()?.throwIfAborted();
-        const current = await store.get(workspace, id);
-        if (!current || current.revision !== trip.revision) return;
-        const diff = snapshotChanges(trip.latest, latest, latest.checkedAt);
-        latest.pendingSignals = diff.pending;
-        let changes = diff.events;
-        if (trip.watch.alertLevel === 'high')
-          changes = changes.filter(
-            (e) =>
-              e.kind !== 'new' ||
-              latest.reports.some((r) =>
-                r.result.issues?.some(
-                  (i) => i.title === e.title && i.score >= 60,
+      return launch(
+        workspace,
+        trip,
+        'check',
+        async () => {
+          const latest = await collect(trip, 0, scanMode, progress);
+          currentSignal()?.throwIfAborted();
+          const current = await store.get(workspace, id);
+          if (!current || current.revision !== trip.revision) return;
+          const diff = snapshotChanges(trip.latest, latest, latest.checkedAt);
+          latest.pendingSignals = diff.pending;
+          let changes = diff.events;
+          if (trip.watch.alertLevel === 'high')
+            changes = changes.filter(
+              (e) =>
+                e.kind !== 'new' ||
+                latest.reports.some((r) =>
+                  r.result.issues?.some(
+                    (i) => i.title === e.title && i.score >= 60,
+                  ),
                 ),
-              ),
-          );
-        const timeline = [...changes, ...(trip.timeline || [])].slice(0, 100);
-        await store.update(workspace, id, trip.revision, {
-          latest,
-          comparison: null,
-          timeline,
-          lastError: null,
-          nextCheckAt: new Date(
-            now() + trip.watch.frequencyHours * 3600000,
-          ).toISOString(),
-        });
-      });
+            );
+          const timeline = [...changes, ...(trip.timeline || [])].slice(0, 100);
+          await store.update(workspace, id, trip.revision, {
+            latest,
+            comparison: null,
+            timeline,
+            lastError: null,
+            nextCheckAt: new Date(
+              now() + trip.watch.frequencyHours * 3600000,
+            ).toISOString(),
+          });
+        },
+        scanMode,
+        progress,
+      );
     },
     async compare(workspace, id, { dayOffset = 1, routeIndex = 0 } = {}) {
       const trip = await store.get(workspace, id);
@@ -405,33 +465,43 @@ export function createTripService({
         );
       if (dayOffset === 0 && routeIndex === 0)
         throw tripError('Choose a different date or route.');
-      return launch(workspace, trip, 'comparison', async () => {
-        const shifted = {
-          ...trip,
-          stops: trip.stops.map((s) => ({
-            ...s,
-            startDate: day(s.startDate, dayOffset),
-            endDate: day(s.endDate, dayOffset),
-          })),
-        };
-        const candidate = await collect(shifted, routeIndex);
-        currentSignal()?.throwIfAborted();
-        const current = await store.get(workspace, id);
-        if (!current || current.revision !== trip.revision) return;
-        await store.update(workspace, id, trip.revision, {
-          comparison: {
-            checkedAt: new Date(now()).toISOString(),
-            dayOffset,
+      return launch(
+        workspace,
+        trip,
+        'comparison',
+        async () => {
+          const shifted = {
+            ...trip,
+            stops: trip.stops.map((s) => ({
+              ...s,
+              startDate: day(s.startDate, dayOffset),
+              endDate: day(s.endDate, dayOffset),
+            })),
+          };
+          const candidate = await collect(
+            shifted,
             routeIndex,
-            candidate,
-            notes: [
-              'Compare report dates, coverage and personal impact as well as journey time. A lower report count does not prove that an option is safer.',
-              'Journey times are driving estimates and do not include live disruptions.',
-            ],
-          },
-          lastError: null,
-        });
-      });
+            trip.latest.scanMode || 'quick',
+          );
+          currentSignal()?.throwIfAborted();
+          const current = await store.get(workspace, id);
+          if (!current || current.revision !== trip.revision) return;
+          await store.update(workspace, id, trip.revision, {
+            comparison: {
+              checkedAt: new Date(now()).toISOString(),
+              dayOffset,
+              routeIndex,
+              candidate,
+              notes: [
+                'Compare report dates, coverage and personal impact as well as journey time. A lower report count does not prove that an option is safer.',
+                'Journey times are driving estimates and do not include live disruptions.',
+              ],
+            },
+            lastError: null,
+          });
+        },
+        trip.latest.scanMode || 'quick',
+      );
     },
     cancel(workspace, id) {
       const job = jobs.get(`${workspace}:${id}`);

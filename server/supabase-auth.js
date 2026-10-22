@@ -106,6 +106,45 @@ export function supabaseAuth({
       throw tripError('Enter a valid email address and password.');
     return { email, password };
   };
+  router.post('/google', async (req, res) => {
+    limit.consume(req.ip);
+    let settings;
+    try {
+      const response = await supabaseFetch(new URL('/auth/v1/settings', url), {
+        headers: { apikey: publishableKey },
+      });
+      if (response.ok) settings = await response.json();
+    } catch {
+      throw tripError(
+        'Google sign-in is temporarily unavailable. Please use email and password.',
+        503,
+      );
+    }
+    if (!settings?.external?.google)
+      throw tripError(
+        'Google sign-in is not enabled yet. Please use email and password.',
+        503,
+      );
+    const { data, error } = await client(req, res).auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: new URL('/auth/callback', site).href,
+        skipBrowserRedirect: true,
+      },
+    });
+    if (error || !data?.url)
+      throw tripError(
+        'Google sign-in is not available yet. You can use email and password.',
+        503,
+      );
+    const target = new URL(data.url);
+    if (
+      target.origin !== new URL(url).origin ||
+      target.pathname !== '/auth/v1/authorize'
+    )
+      throw tripError('Google sign-in could not start. Please try again.', 503);
+    res.json({ url: target.href });
+  });
   router.post('/register', async (req, res) => {
     limit.consume(req.ip);
     const { email, password } = credentials(req.body),

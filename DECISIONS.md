@@ -127,3 +127,11 @@ A publishable key cannot apply schema migrations or configure Render. Those dash
 ## Map tile correction
 
 Production CARTO tiles returned success images containing “API key required”, which ordinary image load-error events cannot detect. The default now uses `https://tile.openstreetmap.org/{z}/{x}/{y}.png`, preserving the required origin referrer, standard browser caching and OpenStreetMap attribution. The old OSM block occurred under a referrer-suppressing document policy; that policy was already corrected to `strict-origin-when-cross-origin`. HTTP/network tile failures still remove the tile layer and retain the route, markers and external Maps link. Custom tile providers remain configurable; live availability must be checked on the deployed host.
+
+## Version 5.3: deeper retrieval without invented certainty
+
+The existing Quick path keeps its short engine budget. Thorough allows 90 seconds/place and 28 candidate documents, adds independently bounded Google News RSS/GDELT discovery, and allocates forty seconds for page extraction. Each successful extraction is retained in a partial-results map, so a deadline cannot discard pages that already loaded. Search headlines/index timestamps are not proof of publication or an active disruption; unverified results remain leads. No threshold is weakened and no safety probability is fabricated.
+
+Full-trip Thorough jobs are asynchronous and capped at eight minutes with a nine-minute lease, cancellation and place-based progress. A distinct server-only Supabase lease operation prevents deployment against an old three-minute lock from allowing overlapping work. Thorough bypasses the short check cache; automatic watch checks remain Quick. Public provider availability and paid quotas still affect retrieval, so the app offers facts, source leads and practical departure checks rather than promising a guaranteed finding.
+
+Google login reuses the existing Supabase PKCE flow, checks the configured provider before redirecting and validates the returned authorization URL. Google credentials are managed in Supabase. Authentication tabs and full-width actions replace the awkward switch-button layout while email/password remains available.

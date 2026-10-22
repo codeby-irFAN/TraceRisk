@@ -103,9 +103,9 @@ begin
   end if;
   if action='get' then return public.tracerisk_decode(row); end if;
   if action='remove' then delete from public.tracerisk_trips where id=ident and user_id=owner; return 'true'::jsonb; end if;
-  if action='claim' then
+  if action in ('claim','claimLong') then
     if row.lock_until>stamp then return 'false'::jsonb; end if;
-    update public.tracerisk_trips set lock_until=stamp+180000 where id=ident and user_id=owner; return 'true'::jsonb;
+    update public.tracerisk_trips set lock_until=stamp+greatest(180000,least(600000,coalesce((args->>'leaseMs')::bigint,180000))) where id=ident and user_id=owner; return 'true'::jsonb;
   end if;
   if action='release' then update public.tracerisk_trips set lock_until=0 where id=ident and user_id=owner; return 'true'::jsonb; end if;
   if action='update' then

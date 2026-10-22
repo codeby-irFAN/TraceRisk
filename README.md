@@ -194,3 +194,16 @@ TraceRisk remains a prototype. Use official authorities, emergency services, and
 Supabase Auth/Postgres integration is available alongside local SQLite mode. Follow the [project-specific Supabase setup guide](docs/SUPABASE_SETUP.md) to apply the SQL migration and add the Render environment settings. The guide includes your project URL and public key, email-confirmation/reset redirects, the server-only secret setting and a read-only SQLite-to-Supabase trip migration tool.
 
 The integration uses private ownership-checked storage, HttpOnly PKCE sessions and server-only writes for generated reports. Old local accounts are separate; users register/confirm a Supabase account, and existing trips can be transferred using an explicitly reviewed mapping. A code push alone does not create tables or change the Render environment. Supabase stores data across redeployments; it does not keep Render Free awake for scheduled checks.
+
+## Quick and Thorough checks
+
+Choose a check type above the trip's **Check trip** button:
+
+- **Quick:** the existing short check (around 20 seconds per place; larger itineraries take longer).
+- **Thorough:** fresh retrieval with up to 28 candidate pages per place, longer source-reading budgets, independent Google News RSS/GDELT searches alongside TinyFish, and the same source/date/quotation verification. A place has a 90-second processing budget; the whole itinerary is bounded at eight minutes, with visible progress and cancellation. It may finish sooner.
+
+Thorough checks retain successfully opened pages even when other page requests time out. RSS headlines and unverified snippets remain leads, not established disruptions. Missing TinyFish credentials still permit independent news leads, forecasts and practical checks; TinyFish is currently needed to extract full article text. More time cannot guarantee complete information or a safety verdict. Scheduled Trip Watch continues using Quick mode; comparisons use the saved check's depth.
+
+Supabase deployments must **re-run the updated [SQL migration](supabase/migrations/202610230001_tracerisk.sql)** before Thorough checks, to enable their longer job lease. The migration preserves existing trips. The backend rejects a thorough check against the old lease contract rather than allowing an overlapping scan.
+
+**Google sign-in** is available in Supabase mode after the [Google/Supabase provider setup](docs/GOOGLE_SIGN_IN.md). The account screen now uses aligned Sign in/Create account tabs, full-width actions and readable form labels.

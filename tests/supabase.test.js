@@ -66,6 +66,20 @@ test('actual PostgreSQL migration enforces ownership, atomic revisions, locks an
     assert.equal(await serverCall('claim', { id: trip.id }), true);
     assert.equal(await serverCall('claim', { id: trip.id }), false);
     await serverCall('release', { id: trip.id });
+    assert.equal(
+      await serverCall('claimLong', { id: trip.id, leaseMs: 540000 }),
+      true,
+    );
+    await db.exec('reset role');
+    const longLock = (
+      await db.query(
+        'select lock_until - extract(epoch from clock_timestamp())*1000 as remaining from public.tracerisk_trips where id=$1',
+        [trip.id],
+      )
+    ).rows[0];
+    assert.ok(Number(longLock.remaining) > 500000);
+    await actor(A);
+    await serverCall('release', { id: trip.id });
     const patched = await serverCall('update', {
       id: trip.id,
       revision: trip.revision,
@@ -281,4 +295,53 @@ test('trip API retains the verified Supabase token across asynchronous middlewar
   assert.equal(response.status, 200);
   assert.deepEqual((await response.json()).trips, []);
   assert.deepEqual(tokens, ['Bearer verified-token', 'Bearer verified-token']);
+});
+
+test('Google login uses a real PKCE authorization URL and HttpOnly verifier cookie', async (t) => {
+  const native = globalThis.fetch;
+  let enabled = true;
+  globalThis.fetch = async (input, init) =>
+    new URL(input).hostname === 'example.supabase.co'
+      ? new Response(JSON.stringify({ external: { google: enabled } }), {
+          headers: { 'Content-Type': 'application/json' },
+        })
+      : native(input, init);
+  t.after(() => {
+    globalThis.fetch = native;
+  });
+  const auth = supabaseAuth({
+      url: 'https://example.supabase.co',
+      publishableKey: 'public-test-key',
+      siteUrl: 'https://tracerisk.onrender.com',
+    }),
+    app = createApp({ auth }),
+    server = app.listen(0, '127.0.0.1');
+  await new Promise((r) => server.once('listening', r));
+  t.after(() => {
+    server.closeAllConnections();
+    server.close();
+    app.locals.tripStore.close();
+  });
+  const post = () =>
+    native(`http://127.0.0.1:${server.address().port}/api/auth/google`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-TraceRisk-Request': '1',
+      },
+      body: '{}',
+    });
+  const response = await post();
+  assert.equal(response.status, 200);
+  const target = new URL((await response.json()).url);
+  assert.equal(target.origin, 'https://example.supabase.co');
+  assert.equal(target.searchParams.get('provider'), 'google');
+  assert.ok(target.searchParams.get('code_challenge'));
+  assert.equal(
+    target.searchParams.get('redirect_to'),
+    'https://tracerisk.onrender.com/auth/callback',
+  );
+  assert.match(response.headers.get('set-cookie'), /HttpOnly/);
+  enabled = false;
+  assert.equal((await post()).status, 503);
 });

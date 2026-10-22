@@ -148,7 +148,7 @@ Additional network access:
 | Regional disaster alerts | `www.gdacs.org/xml/rss.xml` (orange/red events within 150 km and overlapping trip dates; point marks event location, not impact boundary) |
 | Road routing             | `router.project-osrm.org` by default; `ROUTING_BASE_URL` overrides the OSRM-compatible base                                               |
 | Corridor place lookup    | `nominatim.openstreetmap.org`; `REVERSE_GEOCODING_URL` overrides the Nominatim-compatible base                                            |
-| Browser map tiles        | `tile.openstreetmap.org` (standard OpenStreetMap raster tiles; no API key)                                                         |
+| Browser map tiles        | `tile.openstreetmap.org` (standard OpenStreetMap raster tiles; no API key)                                                                |
 
 Public OSRM, Nominatim, Photon and map background services have usage policies and no project-specific availability guarantee. Reverse lookups are globally serialized at more than one second apart, with bounded caching. Attribution is shown on the map. For commercial/high-volume use, configure appropriate routing, geocoding and tile services and review their policies; the current tile URL is configured in `src/trips/RouteMap.jsx`. Use licensed commercial Open-Meteo access when required; the current free endpoints are for non-commercial use. Hotel advertisements, payments and bookings are not implemented.
 
@@ -173,3 +173,11 @@ Use [SUPABASE_SETUP.md](SUPABASE_SETUP.md) for the exact project values, SQL mig
 Leaving the Supabase variables blank retains SQLite mode. Enabling only part of the configuration fails startup. Existing SQLite users/password hashes are not silently copied into Supabase Auth; use the documented reviewed trip-import process. Configure Supabase email/SMTP for real delivery and review current free-plan limits. Local SQL and fixture tests are separate from verifying your dashboard settings and live email delivery.
 
 If an earlier deployment has `VITE_MAP_TILE_URL` set to a CARTO URL, remove that override (and any CARTO-specific `VITE_MAP_ATTRIBUTION`) and rebuild. The standard OSM service requires a valid Referer and respect for its [tile usage policy](https://operations.osmfoundation.org/policies/tiles/); keep the configured referrer policy and normal browser caching. This public service has no project-specific uptime guarantee; high-volume deployments should configure an appropriate hosted provider.
+
+## Longer scans and Google sign-in
+
+Re-run the current Supabase SQL migration to update the claim function for Thorough's nine-minute lease. The full trip job is limited to eight minutes, and a per-place analyzer to ninety seconds. Jobs run asynchronously behind the existing short HTTP request; no reverse-proxy timeout increase is required. A sleeping/restarting free host can still interrupt a job. Complete results persist and the previous completed briefing is retained if a check fails or is cancelled.
+
+Thorough adds best-effort outbound requests to `news.google.com` (RSS) and `api.gdeltproject.org` (news index). These require no new app key, but providers can block requests or impose limits. RSS/index results never become full-text verified claims on their own. TinyFish Search/Fetch and Groq remain the current optional retrieval/quotation-selection services; Groq is still the only AI provider.
+
+For Google login, follow [GOOGLE_SIGN_IN.md](GOOGLE_SIGN_IN.md). Enabling a button in code does not create a Google OAuth client or enable the provider in Supabase. Google Client ID/secret must be entered directly into Supabase; these are separate from the Supabase keys in Render.

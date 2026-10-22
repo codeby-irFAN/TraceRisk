@@ -201,3 +201,30 @@ test('provider JSON bodies are bounded while streaming', async (t) => {
     /size limit/,
   );
 });
+
+test('completed original pages survive an extraction deadline', async () => {
+  const scan = createAnalyzer({
+    now: clock,
+    budgetMs: 2000,
+    maxSources: 24,
+    stages: { search: 30, extraction: 30, weather: 30, assessment: 30 },
+    search: async (group) => [row(group)],
+    weather: async () => emptyWeather(),
+    assess: async () => null,
+    extract: async (rows, { onPartial }) => {
+      const results = new Map([
+        [
+          rows[0].url,
+          { text: rows[0].snippet, publishedAt: rows[0].publishedAt },
+        ],
+      ]);
+      onPartial({ results, errors: [] });
+      await sleep(1000);
+    },
+  });
+  const result = await scan(trip);
+  assert.equal(result.pagesFetched, 1);
+  assert.equal(result.performance.budgetMs, 2000);
+  assert.ok(result.sources.some((s) => s.fetched));
+  assert.ok(result.nextSteps.length);
+});
