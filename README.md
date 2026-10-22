@@ -30,7 +30,7 @@ Create a free account with your name, email and password, then add an itinerary 
 
 Stops can be cities or attractions such as **Hawa Mahal, Jaipur** or **Qutub Minar, Delhi**. The app preserves landmark coordinates and checks the surrounding city for relevant travel updates; a city report is not automatically a closure at the attraction. A small built-in landmark directory works without a geocoding key; broader searches use Photon/OpenStreetMap and city geocoding. Opening hours and ticket prices are only answered when retrieved evidence supports them.
 
-The main results use plain-language summaries. Source methodology and route limitations stay available in expandable details. Comparisons show actual weather and travel updates, and omit missing driving times rather than displaying an invalid estimate. The map uses an attributed CARTO background and keeps route/stop overlays available if tiles fail to load.
+The main results use plain-language summaries. Source methodology and route limitations stay available in expandable details. Comparisons show actual weather and travel updates, and omit missing driving times rather than displaying an invalid estimate. The map uses the standard OpenStreetMap background without an API key and keeps route/stop overlays available if tiles fail to load.
 
 Trip Watch alerts appear **inside the workspace**, including changes collected while the browser was closed. There is no email, SMS or operating-system push delivery. The server must remain running with persistent storage for reliable monitoring.
 

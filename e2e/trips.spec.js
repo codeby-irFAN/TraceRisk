@@ -182,11 +182,14 @@ test('plan, check, inspect evidence, compare, ask and share a trip', async ({
   await expect(
     page.getByRole('link', { name: /District road advisory/ }).first(),
   ).toHaveAttribute('href', source.url);
-  await page.route(/https:\/\/[abcd]\.basemaps\.cartocdn\.com\/.*/, (r) =>
-    r.fulfill({ status: 503, body: '' }),
-  );
+  await page.route(/https:\/\/tile\.openstreetmap\.org\/.*/, async (r) => {
+    const headers = await r.request().allHeaders();
+    expect(headers.referer).toBe(new URL(page.url()).origin + '/');
+    await r.fulfill({ status: 503, body: '' });
+  });
   await page.getByRole('tab', { name: 'Route map', exact: true }).click();
   await expect(page.getByLabel('Interactive trip route map')).toBeVisible();
+
   await expect(
     page.getByText(/The map background could not load/),
   ).toBeVisible();

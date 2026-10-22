@@ -4,7 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import { place } from './api';
 export const TILE_URL =
   import.meta.env.VITE_MAP_TILE_URL ||
-  'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+  'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 export default function RouteMap({ trip, snapshot = trip.latest }) {
   const node = useRef(null),
     [backgroundFailed, setBackgroundFailed] = useState(false);
@@ -17,10 +17,9 @@ export default function RouteMap({ trip, snapshot = trip.latest }) {
     );
     const tiles = L.tileLayer(TILE_URL, {
       maxZoom: 19,
-      subdomains: 'abcd',
       attribution:
         import.meta.env.VITE_MAP_ATTRIBUTION ||
-        '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors · © <a href="https://carto.com/attributions">CARTO</a>',
+        '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       referrerPolicy: 'strict-origin-when-cross-origin',
     }).addTo(map);
     let failures = 0;
