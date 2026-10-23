@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, place } from './api';
 const today = () =>
   new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
@@ -9,22 +9,32 @@ function Place({ value, onChange, label }) {
   const [options, setOptions] = useState([]),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
+  const request = useRef(0);
+  useEffect(
+    () => () => {
+      request.current += 1;
+    },
+    [],
+  );
   async function find() {
+    if (value.query.trim().length < 2) return;
+    const current = ++request.current;
     setBusy(true);
     setError('');
     try {
       const data = await api(
         `/locations?destination=${encodeURIComponent(value.query)}`,
       );
+      if (current !== request.current) return;
       setOptions(data.locations || []);
       if (!data.locations?.length)
         setError(
           'Try the landmark name and city, for example Hawa Mahal, Jaipur.',
         );
     } catch (e) {
-      setError(e.message);
+      if (current === request.current) setError(e.message);
     } finally {
-      setBusy(false);
+      if (current === request.current) setBusy(false);
     }
   }
   return (
@@ -36,7 +46,16 @@ function Place({ value, onChange, label }) {
             aria-label={label}
             required
             value={value.query}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !value.locationId && !value.savedId) {
+                e.preventDefault();
+                find();
+              }
+            }}
             onChange={(e) => {
+              request.current += 1;
+              setBusy(false);
+              setError('');
               onChange({
                 ...value,
                 query: e.target.value,
@@ -56,6 +75,11 @@ function Place({ value, onChange, label }) {
           </button>
         </div>
       </label>
+      {!value.locationId && !value.savedId && (
+        <small className="muted">
+          Type a place, choose Find place, then select a match below.
+        </small>
+      )}
       {(value.locationId || value.savedId) && (
         <small className="confirmed">
           ✓ {value.confirmedLabel || 'Place confirmed'}
@@ -86,15 +110,23 @@ function Place({ value, onChange, label }) {
     </div>
   );
 }
-export default function TripComposer({ initial, onSave, onClose }) {
+export default function TripComposer({ initial, onSave, onClose, monitoring }) {
   const [draft, setDraft] = useState(
     initial
       ? {
           ...initial,
           origin: initial.origin
-            ? { query: initial.originQuery, savedId: initial.originId }
+            ? {
+                query: initial.originQuery,
+                savedId: initial.originId,
+                confirmedLabel: place(initial.origin),
+              }
             : null,
-          stops: initial.stops.map((s) => ({ ...s, savedId: s.id })),
+          stops: initial.stops.map((s) => ({
+            ...s,
+            savedId: s.id,
+            confirmedLabel: place(s.location),
+          })),
         }
       : {
           title: '',
@@ -112,6 +144,40 @@ export default function TripComposer({ initial, onSave, onClose }) {
   );
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('');
+  const dialog = useRef(null);
+  const saving = useRef(false);
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => {
+    const previous = document.activeElement;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    dialog.current.querySelector('input')?.focus();
+    const keyboard = (event) => {
+      if (event.key === 'Escape' && !saving.current) close.current();
+      if (event.key !== 'Tab') return;
+      const controls = [
+        ...dialog.current.querySelectorAll(
+          'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]',
+        ),
+      ].filter((el) => el.getClientRects().length);
+      const first = controls[0],
+        last = controls.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    document.addEventListener('keydown', keyboard);
+    return () => {
+      document.body.style.overflow = overflow;
+      document.removeEventListener('keydown', keyboard);
+      if (previous?.isConnected) previous.focus();
+    };
+  }, []);
   const change = (key, value) => setDraft((d) => ({ ...d, [key]: value }));
   const stop = (i, value) =>
     change(
@@ -120,13 +186,37 @@ export default function TripComposer({ initial, onSave, onClose }) {
     );
   async function submit(e) {
     e.preventDefault();
-    setBusy(true);
     setError('');
+    const unconfirmed =
+      draft.origin && !draft.origin.locationId && !draft.origin.savedId
+        ? 'Starting from'
+        : draft.stops.findIndex((s) => !s.locationId && !s.savedId);
+    if (unconfirmed === 'Starting from' || unconfirmed >= 0) {
+      setError(
+        `Confirm ${unconfirmed === 'Starting from' ? 'your starting place' : `the destination for stop ${unconfirmed + 1}`}: choose Find place, then select a match.`,
+      );
+      return;
+    }
+    for (let i = 0; i < draft.stops.length; i++) {
+      const s = draft.stops[i];
+      if (
+        s.endDate < s.startDate ||
+        (i && s.startDate < draft.stops[i - 1].endDate)
+      ) {
+        setError(
+          `Check stop ${i + 1}: dates must follow the previous stop and departure cannot be before arrival.`,
+        );
+        return;
+      }
+    }
+    saving.current = true;
+    setBusy(true);
     try {
       await onSave(draft);
     } catch (e) {
       setError(e.message);
     } finally {
+      saving.current = false;
       setBusy(false);
     }
   }
@@ -134,6 +224,7 @@ export default function TripComposer({ initial, onSave, onClose }) {
     <div className="modal-backdrop">
       <section
         className="trip-modal"
+        ref={dialog}
         role="dialog"
         aria-modal="true"
         aria-label="Plan a trip"
@@ -143,11 +234,19 @@ export default function TripComposer({ initial, onSave, onClose }) {
             <p className="eyebrow">YOUR NEXT JOURNEY</p>
             <h2>{initial ? 'Edit itinerary' : 'Plan a trip'}</h2>
           </div>
-          <button onClick={onClose} aria-label="Close trip form">
+          <button
+            disabled={busy}
+            onClick={onClose}
+            aria-label="Close trip form"
+          >
             ✕
           </button>
         </div>
         <form onSubmit={submit}>
+          <p className="muted">
+            Add a city or landmark and your dates. Save your trip, then choose a
+            quick or thorough check.
+          </p>
           <div className="two-col">
             <label>
               Trip name
@@ -215,7 +314,14 @@ export default function TripComposer({ initial, onSave, onClose }) {
                     type="date"
                     value={s.startDate}
                     onChange={(e) =>
-                      stop(i, { ...s, startDate: e.target.value })
+                      stop(i, {
+                        ...s,
+                        startDate: e.target.value,
+                        endDate:
+                          s.endDate < e.target.value
+                            ? e.target.value
+                            : s.endDate,
+                      })
                     }
                   />
                 </label>
@@ -266,70 +372,82 @@ export default function TripComposer({ initial, onSave, onClose }) {
                 ))}
               </select>
             </label>
-            <label>
-              Watch frequency
-              <select
-                value={draft.watch.frequencyHours}
-                onChange={(e) =>
-                  change('watch', {
-                    ...draft.watch,
-                    frequencyHours: Number(e.target.value),
-                  })
-                }
-              >
-                {[1, 3, 6, 12, 24].map((h) => (
-                  <option key={h} value={h}>
-                    Every {h} hours
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <fieldset>
-            <legend>Make the advice relevant to you</legend>
-            {[
-              ['children', 'Travelling with children'],
-              ['limitedMobility', 'Limited mobility'],
-              ['respiratory', 'Sensitive to air quality'],
-            ].map(([k, l]) => (
-              <label className="check" key={k}>
-                <input
-                  type="checkbox"
-                  checked={draft.preferences[k]}
+            {monitoring && (
+              <label>
+                Watch frequency
+                <select
+                  value={draft.watch.frequencyHours}
                   onChange={(e) =>
-                    change('preferences', {
-                      ...draft.preferences,
-                      [k]: e.target.checked,
+                    change('watch', {
+                      ...draft.watch,
+                      frequencyHours: Number(e.target.value),
                     })
                   }
-                />
-                {l}
+                >
+                  {[1, 3, 6, 12, 24].map((h) => (
+                    <option key={h} value={h}>
+                      Every {h} hours
+                    </option>
+                  ))}
+                </select>
               </label>
-            ))}
-          </fieldset>
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={draft.watch.enabled}
-              onChange={(e) =>
-                change('watch', { ...draft.watch, enabled: e.target.checked })
-              }
-            />
-            Watch this trip for changes
-          </label>
+            )}
+          </div>
+          <details>
+            <summary>Traveller needs (optional)</summary>
+            <fieldset>
+              <legend>Make the advice relevant to you</legend>
+              {[
+                ['children', 'Travelling with children'],
+                ['limitedMobility', 'Limited mobility'],
+                ['respiratory', 'Sensitive to air quality'],
+              ].map(([k, l]) => (
+                <label className="check" key={k}>
+                  <input
+                    type="checkbox"
+                    checked={draft.preferences[k]}
+                    onChange={(e) =>
+                      change('preferences', {
+                        ...draft.preferences,
+                        [k]: e.target.checked,
+                      })
+                    }
+                  />
+                  {l}
+                </label>
+              ))}
+            </fieldset>
+          </details>
+          {monitoring && (
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={draft.watch.enabled}
+                onChange={(e) =>
+                  change('watch', { ...draft.watch, enabled: e.target.checked })
+                }
+              />
+              Watch this trip for changes
+            </label>
+          )}
           <p className="muted">
-            Alerts appear in your workspace. Checks run while the server is
-            available, until your trip ends. Each stop can take up to 20
-            seconds; full itineraries take longer.
+            {monitoring
+              ? 'Alerts appear in your workspace. Checks run while the server is available, until your trip ends. You can also check manually at any time.'
+              : 'Your itinerary will be saved to your account. Automatic checks are unavailable; you can check manually whenever you need an update.'}
           </p>
           {error && (
             <p role="alert" className="error">
               {error}
             </p>
           )}
-          <button className="primary" disabled={busy}>
-            {busy ? 'Saving…' : 'Save itinerary'}
-          </button>
+          <div className="inline form-actions">
+            <button className="primary" disabled={busy}>
+              {busy ? 'Saving…' : 'Save itinerary'}
+            </button>
+            <button type="button" disabled={busy} onClick={onClose}>
+              Cancel
+            </button>
+          </div>
         </form>
       </section>
     </div>

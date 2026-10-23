@@ -1,6 +1,6 @@
 import logo from '../../graphics/logo.png';
 import { useState } from 'react';
-import { api, place, when } from './api';
+import { api, place, when, dateLabel, dateRange } from './api';
 import RouteMap from './RouteMap';
 export function Sources({ sources = [] }) {
   return (
@@ -27,9 +27,7 @@ export function Report({ report, detailed = false }) {
                 : 'YOUR STOP'}
           </p>
           <h3>{report.label}</h3>
-          <small>
-            {report.startDate} → {report.endDate}
-          </small>
+          <small>{dateRange(report.startDate, report.endDate)}</small>
         </div>
         <span className="pill">{result.issues?.length || 0} updates</span>
       </div>
@@ -65,7 +63,7 @@ export function Report({ report, detailed = false }) {
           <p>{issue.summary || issue.travelerImpact}</p>
           <p className="muted">
             Affected area: {issue.area || report.label} · Applies to check:{' '}
-            {report.startDate}–{report.endDate}
+            {dateRange(report.startDate, report.endDate)}
           </p>
           <ul>
             {issue.personalImpact?.map((p) => (
@@ -118,7 +116,8 @@ export function Report({ report, detailed = false }) {
           <div className="forecast-list">
             {result.weather.dailyForecast.map((d, i) => (
               <div key={i}>
-                <strong>{d.date}</strong> · {d.condition || 'Forecast'}
+                <strong>{dateLabel(d.date)}</strong> ·{' '}
+                {d.condition || 'Forecast'}
                 <br />
                 {d.minC ?? '—'}–{d.maxC ?? '—'}°C · Rain{' '}
                 {d.precipitationMm ?? '—'} mm (
@@ -209,7 +208,8 @@ export function Briefing({ data }) {
       <ol className="itinerary-line">
         {data.stops.map((s) => (
           <li key={s.id}>
-            <strong>{place(s.location)}</strong> · {s.startDate} → {s.endDate}
+            <strong>{place(s.location)}</strong> ·{' '}
+            {dateRange(s.startDate, s.endDate)}
           </li>
         ))}
       </ol>
@@ -222,8 +222,16 @@ export function Briefing({ data }) {
     </article>
   );
 }
-export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
-  const [tab, setTab] = useState('Overview'),
+export default function TripDetails({
+  trip,
+  act,
+  refresh,
+  onEdit,
+  agency,
+  monitoring,
+  initialTab = 'Overview',
+}) {
+  const [tab, setTab] = useState(initialTab),
     [offset, setOffset] = useState(1),
     [route, setRoute] = useState(0),
     [question, setQuestion] = useState('What should I check before leaving?'),
@@ -231,12 +239,14 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
     [share, setShare] = useState(null),
     [includeClient, setIncludeClient] = useState(false),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState('');
+    [error, setError] = useState(''),
+    [notice, setNotice] = useState('');
   const latest = trip.latest;
   const [scanMode, setScanMode] = useState('quick');
   async function run(fn) {
     setBusy(true);
     setError('');
+    setNotice('');
     try {
       await fn();
     } catch (e) {
@@ -256,7 +266,7 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
           <h1>{trip.title}</h1>
           <p className="muted">
             {trip.stops.length} stop{trip.stops.length === 1 ? '' : 's'} ·{' '}
-            {trip.stops[0].startDate} → {trip.stops.at(-1).endDate}
+            {dateRange(trip.stops[0].startDate, trip.stops.at(-1).endDate)}
           </p>
         </div>
         <div className="inline">
@@ -315,7 +325,13 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
       <div className="watch-strip">
         <span>
           ● Trip Watch{' '}
-          {trip.watchEnded ? 'finished' : trip.watch.enabled ? 'on' : 'paused'}
+          {trip.watchEnded
+            ? 'finished'
+            : !monitoring
+              ? 'unavailable · manual checks only'
+              : trip.watch.enabled
+                ? 'on'
+                : 'paused'}
         </span>
         <span>
           Last check: {when(latest?.checkedAt)}
@@ -326,25 +342,29 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
           Next check:{' '}
           {trip.watchEnded
             ? 'Trip dates have ended'
-            : trip.watch.enabled
-              ? when(trip.nextCheckAt)
-              : 'paused'}
+            : !monitoring
+              ? 'Check manually when you need an update'
+              : trip.watch.enabled
+                ? when(trip.nextCheckAt)
+                : 'paused'}
         </span>
-        <button
-          disabled={trip.checking}
-          onClick={() =>
-            run(async () => {
-              await api(
-                `/trips/${trip.id}/watch`,
-                { ...trip.watch, enabled: !trip.watch.enabled },
-                'PATCH',
-              );
-              await refresh();
-            })
-          }
-        >
-          {trip.watch.enabled ? 'Pause' : 'Resume'}
-        </button>
+        {monitoring && !trip.watchEnded && (
+          <button
+            disabled={trip.checking || busy}
+            onClick={() =>
+              run(async () => {
+                await api(
+                  `/trips/${trip.id}/watch`,
+                  { ...trip.watch, enabled: !trip.watch.enabled },
+                  'PATCH',
+                );
+                await refresh();
+              })
+            }
+          >
+            {trip.watch.enabled ? 'Pause' : 'Resume'}
+          </button>
+        )}
       </div>
       <div className="trip-tabs" role="tablist" aria-label="Trip views">
         {[
@@ -366,6 +386,11 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
           </button>
         ))}
       </div>
+      {notice && (
+        <p className="notice" role="status">
+          {notice}
+        </p>
+      )}
       {error && (
         <p className="error" role="alert">
           {error}
@@ -373,45 +398,45 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
       )}
       {tab === 'Overview' && (
         <>
-          <div className="metric-grid">
-            <div className="trip-card">
-              <span>TRAVEL UPDATES</span>
-              <strong>{latest?.issueCount ?? '—'}</strong>
-              <small>{latest?.highSignals || 0} need closer attention</small>
+          {latest && (
+            <div className="metric-grid">
+              <div className="trip-card">
+                <span>TRAVEL UPDATES</span>
+                <strong>{latest?.issueCount ?? '—'}</strong>
+                <small>{latest?.highSignals || 0} need closer attention</small>
+              </div>
+              <div className="trip-card">
+                <span>STOPS REVIEWED</span>
+                <strong>
+                  {latest
+                    ? `${latest.reportsChecked}/${latest.reportsTotal}`
+                    : '—'}
+                </strong>
+                <small>Your stops and nearby route areas</small>
+              </div>
+              <div className="trip-card">
+                <span>TRAVEL PROFILE</span>
+                <strong className="metric-text">{trip.preferences.mode}</strong>
+                <small>
+                  {[
+                    ['children', 'Children'],
+                    ['limitedMobility', 'Limited mobility'],
+                    ['respiratory', 'Air sensitivity'],
+                  ]
+                    .filter(([k]) => trip.preferences[k])
+                    .map(([, l]) => l)
+                    .join(' · ') || 'Standard precautions'}
+                </small>
+              </div>
             </div>
-            <div className="trip-card">
-              <span>STOPS REVIEWED</span>
-              <strong>
-                {latest
-                  ? `${latest.reportsChecked}/${latest.reportsTotal}`
-                  : '—'}
-              </strong>
-              <small>Your stops and nearby route areas</small>
-            </div>
-            <div className="trip-card">
-              <span>TRAVEL PROFILE</span>
-              <strong className="metric-text">{trip.preferences.mode}</strong>
-              <small>
-                {[
-                  ['children', 'Children'],
-                  ['limitedMobility', 'Limited mobility'],
-                  ['respiratory', 'Air sensitivity'],
-                ]
-                  .filter(([k]) => trip.preferences[k])
-                  .map(([, l]) => l)
-                  .join(' · ') || 'Standard precautions'}
-              </small>
-            </div>
-          </div>
+          )}
           <section className="trip-card">
             <h3>Your journey, stop by stop</h3>
             <ol className="itinerary-line">
               {trip.stops.map((s) => (
                 <li key={s.id}>
                   <strong>{place(s.location)}</strong>
-                  <span>
-                    {s.startDate} → {s.endDate}
-                  </span>
+                  <span>{dateRange(s.startDate, s.endDate)}</span>
                 </li>
               ))}
             </ol>
@@ -420,10 +445,11 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
             latest.reports.map((r) => <Report key={r.key} report={r} />)
           ) : (
             <div className="empty-state">
-              <h2>Ready when you are.</h2>
+              <h2>Your trip is saved. Let’s check it.</h2>
               <p>
-                Check your trip to collect dated reports, forecasts and
-                practical departure checks for every stop.
+                Quick checks look for recent travel updates and weather. Choose
+                Thorough above when you want more sources checked. You can keep
+                browsing while it runs.
               </p>
               <button
                 className="primary"
@@ -492,11 +518,17 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
               Mark all read
             </button>
           </div>
+          {!monitoring && (
+            <p className="notice">
+              Automatic checks are unavailable. Use Check again to refresh your
+              trip; any meaningful changes will appear here.
+            </p>
+          )}
           <div className="two-col">
             <label>
               Check frequency
               <select
-                disabled={trip.checking}
+                disabled={trip.checking || !monitoring || busy}
                 value={trip.watch.frequencyHours}
                 onChange={(e) =>
                   run(async () => {
@@ -519,7 +551,7 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
             <label>
               Alert level
               <select
-                disabled={trip.checking}
+                disabled={trip.checking || !monitoring || busy}
                 value={trip.watch.alertLevel}
                 onChange={(e) =>
                   run(async () => {
@@ -538,9 +570,8 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
             </label>
           </div>
           <p className="muted">
-            Alerts stay in this workspace. A missing report is labelled “not
-            observed”; only an explicit current reopening or withdrawal report
-            supports “resolved”.
+            Updates appear here, not by email. If a report disappears, we keep
+            it as unconfirmed until a current source says the issue has ended.
           </p>
           {trip.timeline.length ? (
             trip.timeline.map((e) => (
@@ -687,9 +718,18 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
         <section className="trip-card">
           <p className="eyebrow">GROUNDED IN YOUR TRIP</p>
           <h2>Ask about your journey.</h2>
+          <p className="muted">
+            Answers use the sources saved with your last check. Ask about
+            disruptions, weather or what to verify before departure.
+          </p>
+          {!latest && (
+            <p className="notice">
+              Check your trip first to give the assistant sources to work with.
+            </p>
+          )}
           <div className="suggestions">
             {[
-              'Which issues could affect the bus journey?',
+              `Which issues could affect my ${trip.preferences.mode} journey?`,
               'What should I check before leaving tomorrow?',
               'Why did this trip’s assessment change?',
             ].map((q) => (
@@ -753,11 +793,14 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
               className="primary"
               disabled={!latest || busy}
               onClick={() =>
-                run(async () =>
+                run(async () => {
                   setShare(
                     await api(`/trips/${trip.id}/share`, { includeClient }),
-                  ),
-                )
+                  );
+                  setNotice(
+                    'Briefing link created. It shares this saved report, not future updates.',
+                  );
+                })
               }
             >
               Create briefing link
@@ -767,6 +810,9 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
                 run(async () => {
                   await api(`/trips/${trip.id}/share`, undefined, 'DELETE');
                   setShare(null);
+                  setNotice(
+                    'Briefing link revoked. The old link can no longer be opened.',
+                  );
                 })
               }
             >
@@ -785,11 +831,14 @@ export default function TripDetails({ trip, act, refresh, onEdit, agency }) {
               <p>Expires {when(share.expiresAt)}</p>
               <button
                 onClick={() =>
-                  run(() =>
-                    navigator.clipboard.writeText(
+                  run(async () => {
+                    await navigator.clipboard.writeText(
                       window.location.origin + share.path,
-                    ),
-                  )
+                    );
+                    setNotice(
+                      'Link copied. You can now paste it into a message.',
+                    );
+                  })
                 }
               >
                 Copy link

@@ -80,3 +80,9 @@ A live Thorough check for Jaipur on the current trip day retrieved **18 original
 Regression checks cover independent news retrieval without a TinyFish key, unsafe/wrong-place feed rejection, preservation of partial page extraction, cache separation, long job leases, progress, cancellation and a real Supabase SDK Google PKCE URL/verifier cookie without signing into Google. Browser checks cover Thorough selection, account tab switching, mobile layouts and a disabled Google provider's fallback. Live Google login still requires owner-configured Google/Supabase credentials.
 
 Version 5.3 validation: **82 Node tests and 17 browser tests passed**, along with formatting and the production build. Google email/provider setup was fixture-tested rather than represented as a completed live Google sign-in. The revised desktop/mobile authentication screens were visually inspected.
+
+## Workspace usability validation
+
+The usability update passed **82 Node tests and 18 Playwright browser tests**, plus a production build. Browser coverage now includes the first-trip guide, hidden empty filters, initial/modal focus, Tab wrapping, Escape and focus return, pre-save place confirmation, Enter-to-search, arrival/departure date repair, stop-order errors, stale lookup response rejection, manual-watch labels, search reset and Updates opening the change timeline directly. The complete existing check/evidence/map/comparison/assistant/share flow still passes.
+
+Desktop and 390-pixel mobile first-trip screens were visually reviewed, along with the mobile trip form and client desk. README screenshots use deterministic test fixtures. No live provider requests, Google sign-ins or production deployment checks were performed for this presentation/documentation update.

@@ -11,7 +11,7 @@ import {
   Sun,
   ArrowUpRight,
 } from 'lucide-react';
-import { api, place, when, stored, remember } from './api';
+import { api, place, when, dateRange, stored, remember } from './api';
 import AuthPanel, { PasswordForm } from './AuthPanel';
 import TripComposer from './TripComposer';
 import TripDetails from './TripDetails';
@@ -22,6 +22,8 @@ export default function Workspace() {
     [workspace, setWorkspace] = useState(null),
     [trips, setTrips] = useState([]),
     [selected, setSelected] = useState(null),
+    [initialTab, setInitialTab] = useState('Overview'),
+    [notice, setNotice] = useState(''),
     [trip, setTrip] = useState(null),
     [view, setView] = useState('Trips'),
     [composer, setComposer] = useState(false),
@@ -123,6 +125,12 @@ export default function Workspace() {
       draft,
       editing ? 'PUT' : 'POST',
     );
+    setInitialTab('Overview');
+    setNotice(
+      editing
+        ? 'Trip updated.'
+        : 'Trip saved. Choose a check below to get started.',
+    );
     setSelected(result.trip.id);
     setTrip(result.trip);
     setComposer(false);
@@ -149,9 +157,11 @@ export default function Workspace() {
   const shown = trips.filter((t) =>
     `${t.title} ${t.client} ${t.stops.map((s) => place(s.location)).join(' ')}`
       .toLowerCase()
-      .includes(search.toLowerCase()),
+      .includes(search.trim().toLowerCase()),
   );
-  function open(t) {
+  function open(t, tab = 'Overview') {
+    setInitialTab(tab);
+    setNotice('');
     setTrip(null);
     setSelected(t.id);
     setView('Trips');
@@ -179,7 +189,9 @@ export default function Workspace() {
               <button
                 className={view === name ? 'active' : ''}
                 key={name}
+                aria-current={view === name ? 'page' : undefined}
                 onClick={() => {
+                  setNotice('');
                   setView(name);
                   if (name !== 'Trips') setSelected(null);
                 }}
@@ -238,6 +250,17 @@ export default function Workspace() {
             )}
           </div>
         </header>
+        {notice && (
+          <div className="notice feedback" role="status">
+            {notice}
+            <button
+              aria-label="Dismiss notification"
+              onClick={() => setNotice('')}
+            >
+              ✕
+            </button>
+          </div>
+        )}
         {error && (
           <div className="error" role="alert">
             {error}
@@ -267,6 +290,8 @@ export default function Workspace() {
               setError('');
             }}
           />
+        ) : !workspace ? (
+          <p role="status">Loading your trips…</p>
         ) : (
           <>
             {view === 'Trips' && selected ? (
@@ -285,6 +310,8 @@ export default function Workspace() {
                     key={trip.id}
                     trip={trip}
                     agency={workspace?.workspace}
+                    monitoring={Boolean(workspace?.monitoring)}
+                    initialTab={initialTab}
                     act={act}
                     refresh={refresh}
                     onEdit={() => {
@@ -316,135 +343,204 @@ export default function Workspace() {
                       : 'Your itineraries, evidence and next steps — together.'}
                   </p>
                 </div>
-                <div className="metric-grid">
-                  <div className="trip-card">
-                    <span>SAVED TRIPS</span>
-                    <strong>{trips.length}</strong>
+                {trips.length > 0 && (
+                  <div className="metric-grid">
+                    <div className="trip-card">
+                      <span>SAVED TRIPS</span>
+                      <strong>{trips.length}</strong>
+                    </div>
+                    <div className="trip-card">
+                      <span>
+                        {workspace?.monitoring
+                          ? 'ON WATCH'
+                          : 'READY FOR MANUAL CHECKS'}
+                      </span>
+                      <strong>
+                        {
+                          trips.filter(
+                            (t) =>
+                              !t.watchEnded &&
+                              (!workspace?.monitoring || t.watch.enabled),
+                          ).length
+                        }
+                      </strong>
+                    </div>
+                    <div className="trip-card">
+                      <span>UNREAD UPDATES</span>
+                      <strong>{unread}</strong>
+                    </div>
                   </div>
-                  <div className="trip-card">
-                    <span>ON WATCH</span>
-                    <strong>
-                      {
-                        trips.filter((t) => t.watch.enabled && !t.watchEnded)
-                          .length
-                      }
-                    </strong>
-                  </div>
-                  <div className="trip-card">
-                    <span>UNREAD UPDATES</span>
-                    <strong>{unread}</strong>
-                  </div>
-                </div>
-                <div className="section-head">
-                  <h2>
-                    {view === 'Travel desk' ? 'Client trips' : 'Your trips'}
-                  </h2>
-                  <input
-                    aria-label="Filter trips"
-                    className="trip-filter"
-                    placeholder="Search trips, clients or places"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                </div>
-                {view === 'Travel desk' && shown.length > 0 ? (
-                  <div className="table-scroll">
-                    <table className="agent-table">
-                      <thead>
-                        <tr>
-                          <th>Client / trip</th>
-                          <th>Dates</th>
-                          <th>Watch</th>
-                          <th>Latest check</th>
-                          <th>Signals</th>
-                          <th>Open</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {shown.map((t) => (
-                          <tr key={t.id}>
-                            <td>
-                              <strong>{t.client || 'Personal trip'}</strong>
-                              <br />
-                              {t.title}
-                            </td>
-                            <td>
-                              {t.stops[0].startDate}
-                              <br />
-                              {t.stops.at(-1).endDate}
-                            </td>
-                            <td>
-                              {t.watchEnded
-                                ? 'Finished'
-                                : t.watchEnded
-                                  ? 'Finished'
-                                  : t.watch.enabled
-                                    ? `Every ${t.watch.frequencyHours}h`
-                                    : 'Paused'}
-                            </td>
-                            <td>{when(t.latest?.checkedAt)}</td>
-                            <td>
-                              {t.latest?.issueCount ?? '—'} · {t.unreadCount}{' '}
-                              unread
-                            </td>
-                            <td>
-                              <button onClick={() => open(t)}>
-                                Manage / brief
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="trip-grid">
-                    {shown.map((t) => (
-                      <button
-                        className="saved-trip"
-                        key={t.id}
-                        onClick={() => open(t)}
-                      >
-                        <div className="section-head">
-                          <span className="pill">
-                            {t.checking
-                              ? 'Checking…'
-                              : t.watchEnded
-                                ? 'Finished'
-                                : t.watch.enabled
-                                  ? '● On watch'
-                                  : 'Watch paused'}
-                          </span>
-                          <ArrowUpRight size={20} />
-                        </div>
-                        <h2>{t.title}</h2>
-                        <p>{t.stops.map((s) => s.location.name).join(' → ')}</p>
-                        <small>
-                          {t.stops[0].startDate} → {t.stops.at(-1).endDate}
-                        </small>
-                        <div className="trip-card-footer">
-                          <span>{t.client || `${t.stops.length} stops`}</span>
-                          <span>
-                            {t.latest
-                              ? `${t.latest.issueCount} updates`
-                              : 'Ready to check'}
-                            {t.unreadCount ? ` · ${t.unreadCount} new` : ''}
-                          </span>
-                        </div>
-                      </button>
-                    ))}
+                )}
+                {trips.length === 0 ? (
+                  <section className="getting-started trip-card">
+                    <p className="eyebrow">YOUR FIRST TRIP</p>
+                    <h2>From a plan to practical answers.</h2>
+                    <ol className="start-steps">
+                      <li>
+                        <strong>Add your places</strong>
+                        <span>
+                          Choose a city or landmark and when you’ll visit.
+                        </span>
+                      </li>
+                      <li>
+                        <strong>Check your trip</strong>
+                        <span>
+                          Start with a quick check or look through more sources
+                          with Thorough.
+                        </span>
+                      </li>
+                      <li>
+                        <strong>Know what to do next</strong>
+                        <span>
+                          Review travel updates, weather and checks before you
+                          leave.
+                        </span>
+                      </li>
+                    </ol>
                     <button
-                      className="new-trip-card"
+                      className="primary"
                       onClick={() => {
                         setEditing(null);
                         setComposer(true);
                       }}
                     >
-                      <Plus size={28} />
-                      <h3>Make room for a new journey.</h3>
-                      <span>Plan a trip</span>
+                      Plan my first trip
                     </button>
-                  </div>
+                  </section>
+                ) : (
+                  <>
+                    <div className="section-head">
+                      <h2>
+                        {view === 'Travel desk' ? 'Client trips' : 'Your trips'}
+                      </h2>
+                      <input
+                        aria-label="Filter trips"
+                        className="trip-filter"
+                        placeholder="Search trips, clients or places"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                      />
+                    </div>
+                    {view === 'Travel desk' && shown.length > 0 ? (
+                      <div className="table-scroll">
+                        <table className="agent-table">
+                          <thead>
+                            <tr>
+                              <th>Client / trip</th>
+                              <th>Dates</th>
+                              <th>Watch</th>
+                              <th>Latest check</th>
+                              <th>Updates</th>
+                              <th>Open</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {shown.map((t) => (
+                              <tr key={t.id}>
+                                <td>
+                                  <strong>{t.client || 'Personal trip'}</strong>
+                                  <br />
+                                  {t.title}
+                                </td>
+                                <td>
+                                  {dateRange(
+                                    t.stops[0].startDate,
+                                    t.stops.at(-1).endDate,
+                                  )}
+                                </td>
+                                <td>
+                                  {t.watchEnded
+                                    ? 'Finished'
+                                    : !workspace?.monitoring
+                                      ? 'Manual checks'
+                                      : t.watch.enabled
+                                        ? `Every ${t.watch.frequencyHours}h`
+                                        : 'Paused'}
+                                </td>
+                                <td>{when(t.latest?.checkedAt)}</td>
+                                <td>
+                                  {t.latest?.issueCount ?? '—'} ·{' '}
+                                  {t.unreadCount} unread
+                                </td>
+                                <td>
+                                  <button onClick={() => open(t)}>
+                                    Manage / brief
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="trip-grid">
+                        {shown.map((t) => (
+                          <button
+                            className="saved-trip"
+                            key={t.id}
+                            onClick={() => open(t)}
+                          >
+                            <div className="section-head">
+                              <span className="pill">
+                                {t.checking
+                                  ? 'Checking…'
+                                  : t.watchEnded
+                                    ? 'Finished'
+                                    : !workspace?.monitoring
+                                      ? 'Manual checks'
+                                      : t.watch.enabled
+                                        ? '● On watch'
+                                        : 'Watch paused'}
+                              </span>
+                              <ArrowUpRight size={20} />
+                            </div>
+                            <h2>{t.title}</h2>
+                            <p>
+                              {t.stops.map((s) => s.location.name).join(' → ')}
+                            </p>
+                            <small>
+                              {dateRange(
+                                t.stops[0].startDate,
+                                t.stops.at(-1).endDate,
+                              )}
+                            </small>
+                            <div className="trip-card-footer">
+                              <span>
+                                {t.client ||
+                                  `${t.stops.length} stop${t.stops.length === 1 ? '' : 's'}`}
+                              </span>
+                              <span>
+                                {t.latest
+                                  ? `${t.latest.issueCount} updates`
+                                  : 'Ready to check'}
+                                {t.unreadCount ? ` · ${t.unreadCount} new` : ''}
+                              </span>
+                            </div>
+                          </button>
+                        ))}
+                        <button
+                          className="new-trip-card"
+                          onClick={() => {
+                            setEditing(null);
+                            setComposer(true);
+                          }}
+                        >
+                          <Plus size={28} />
+                          <h3>Make room for a new journey.</h3>
+                          <span>Plan a trip</span>
+                        </button>
+                      </div>
+                    )}
+                    {shown.length === 0 && (
+                      <div className="empty-state" role="status">
+                        <h3>No matching trips.</h3>
+                        <p>Try another place, trip name or client.</p>
+                        <button onClick={() => setSearch('')}>
+                          Clear search
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
                 {view === 'Travel desk' && (
                   <p className="notice">
@@ -461,8 +557,8 @@ export default function Workspace() {
                   <p className="eyebrow">WHAT CHANGED</p>
                   <h1>Keep the useful updates.</h1>
                   <p>
-                    Review a trip’s timeline for new, changed, resolved and
-                    no-longer-observed reports.
+                    See what is new, what has changed and what needs your
+                    attention.
                   </p>
                 </div>
                 {trips
@@ -471,7 +567,7 @@ export default function Workspace() {
                     <button
                       className="saved-trip"
                       key={t.id}
-                      onClick={() => open(t)}
+                      onClick={() => open(t, 'What changed')}
                     >
                       <h2>{t.title}</h2>
                       <p>{t.unreadCount} unread updates · Open timeline →</p>
@@ -506,6 +602,9 @@ export default function Workspace() {
                           'PATCH',
                         );
                         await refresh();
+                        setNotice(
+                          'Branding saved. New briefings will use these details.',
+                        );
                       });
                     }}
                   >
@@ -581,6 +680,7 @@ export default function Workspace() {
       {composer && (
         <TripComposer
           initial={editing}
+          monitoring={Boolean(workspace?.monitoring)}
           onSave={save}
           onClose={() => {
             setComposer(false);

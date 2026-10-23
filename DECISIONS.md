@@ -80,7 +80,7 @@ The interface uses flat ivory, forest-green, and terracotta surfaces, serif disp
 
 Notebook saves are explicit and bounded to six plans. Only destination, dates, and a local deduplication ID are saved; assessment results, risk scores, and server location IDs are excluded. Restoring a past plan shifts its start to today while preserving duration and requires fresh confirmation before scanning.
 
-Theme preferences and checklist state are stored locally. Changing a place or dates resets the checklist. Checkmarks are personal reminders, not evidence of safety and not inputs to scoring. If storage is unavailable, the UI falls back to state for the current visit rather than blocking trip planning. Browser storage is origin-specific and can be cleared; there is no account sync.
+In the separate `/check` notebook, theme preferences and checklist state are stored locally. Changing a place or dates resets the checklist. Checkmarks are personal reminders, not evidence of safety and not inputs to scoring. If storage is unavailable, the UI falls back to state for the current visit rather than blocking trip planning. Browser storage is origin-specific and can be cleared; this notebook has no account sync. The root workspace stores account trips on the server.
 
 Signal filters and source search only change the view. Text downloads always include the full scan's findings, sources, coverage, forecast gaps, and limitations. Print reflects the visible filtered view and explicitly says so. Neither output is an official advisory.
 
@@ -135,3 +135,11 @@ The existing Quick path keeps its short engine budget. Thorough allows 90 second
 Full-trip Thorough jobs are asynchronous and capped at eight minutes with a nine-minute lease, cancellation and place-based progress. A distinct server-only Supabase lease operation prevents deployment against an old three-minute lock from allowing overlapping work. Thorough bypasses the short check cache; automatic watch checks remain Quick. Public provider availability and paid quotas still affect retrieval, so the app offers facts, source leads and practical departure checks rather than promising a guaranteed finding.
 
 Google login reuses the existing Supabase PKCE flow, checks the configured provider before redirecting and validates the returned authorization URL. Google credentials are managed in Supabase. Authentication tabs and full-width actions replace the awkward switch-button layout while email/password remains available.
+
+## Usability update: guide the next action
+
+The root workspace now introduces trip planning with three steps rather than zero-value metrics and an empty search field. The trip form explains place confirmation, uses Enter to search an unconfirmed place, rejects an unconfirmed stop before sending a save request, and discards late lookup responses after the query changes. Moving arrival beyond departure repairs the same stop’s departure date; chronological errors receive a stop-specific message. Server validation remains authoritative.
+
+The modal focuses the first input, keeps Tab navigation inside, locks background scrolling, supports Escape when not saving and returns focus to its opener. Optional traveller needs are expandable. Calendar dates are formatted without shifting the selected day across time zones, and check timestamps omit seconds. Success messages confirm saved trips, branding, generated/copied links and revocation. Empty searches provide a clear reset.
+
+Watch cards, the client table and trip details use the server’s monitoring status. Disabled monitoring shows manual checks and hides or disables controls that imply scheduled operation. The Updates list opens the change timeline directly. Assistant suggestions follow the selected travel mode. Unrun reports hide placeholder metrics and explain how to start a check. These presentation changes do not weaken evidence rules or change API contracts.

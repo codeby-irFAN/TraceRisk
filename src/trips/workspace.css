@@ -1100,3 +1100,55 @@
   font-weight: 600;
   color: var(--accent);
 }
+
+/* Keep the first visit short and make keyboard actions easy to follow. */
+.start-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 28px;
+  padding: 12px 0 20px;
+  list-style-position: inside;
+}
+.start-steps li::marker {
+  color: var(--accent);
+  font-weight: 600;
+}
+.start-steps strong {
+  margin-left: 6px;
+}
+.start-steps span {
+  display: block;
+  color: var(--muted);
+  margin-top: 8px;
+}
+.feedback {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.form-actions {
+  margin-top: 22px;
+}
+.trip-workspace :is(button, input, select, textarea, a):focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+.trip-workspace button:disabled {
+  cursor: not-allowed;
+}
+.place-field > small {
+  display: block;
+  margin-top: 6px;
+}
+@media (max-width: 700px) {
+  .start-steps {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .trip-workspace input:not([type='checkbox']):not([type='color']),
+  .trip-workspace select,
+  .trip-workspace textarea {
+    font-size: 16px;
+  }
+}

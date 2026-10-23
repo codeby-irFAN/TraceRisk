@@ -164,12 +164,57 @@ test('plan, check, inspect evidence, compare, ask and share a trip', async ({
   await page
     .getByRole('button', { name: 'Create account', exact: true })
     .click();
-  await page.getByRole('button', { name: 'New trip', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'From a plan to practical answers.' }),
+  ).toBeVisible();
+  await expect(page.getByLabel('Filter trips')).toHaveCount(0);
+  await page.screenshot({
+    path: '/tmp/tracerisk-first-trip-desktop.png',
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({
+    path: '/tmp/tracerisk-first-trip-mobile.png',
+    fullPage: true,
+  });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.setViewportSize({ width: 1280, height: 820 });
+  const newTrip = page.getByRole('button', { name: 'New trip', exact: true });
+  await newTrip.click();
+  await expect(page.getByLabel('Trip name')).toBeFocused();
+  await page.getByRole('button', { name: 'Cancel', exact: true }).focus();
+  await page.keyboard.press('Tab');
+  await expect(
+    page.getByRole('button', { name: 'Close trip form' }),
+  ).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(newTrip).toBeFocused();
+  await newTrip.click();
   await page.getByLabel('Trip name').fill('Mountain holiday');
   await page.getByLabel('Destination', { exact: true }).fill('Delhi');
-  await page.getByRole('button', { name: 'Find place' }).click();
-  await page.getByRole('button', { name: /Delhi · India/ }).click();
   await page.getByRole('button', { name: 'Save itinerary' }).click();
+  await expect(page.getByRole('alert')).toContainText(
+    'Confirm the destination for stop 1',
+  );
+  expect(saved).toBe(false);
+  await page.getByLabel('Destination', { exact: true }).press('Enter');
+  await page.getByRole('button', { name: /Delhi · India/ }).click();
+  await page.getByLabel('Arrival', { exact: true }).fill('2027-01-20');
+  await expect(page.getByLabel('Departure', { exact: true })).toHaveValue(
+    '2027-01-20',
+  );
+  await page.getByRole('button', { name: 'Save itinerary' }).click();
+  await expect(
+    page.getByRole('status').filter({ hasText: 'Trip saved.' }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('● Trip Watch unavailable · manual checks only'),
+  ).toBeVisible();
   await page.getByLabel('Check type', { exact: true }).selectOption('thorough');
   await page.getByRole('button', { name: 'Check trip', exact: true }).click();
   await expect(
@@ -218,6 +263,20 @@ test('plan, check, inspect evidence, compare, ask and share a trip', async ({
   await page.getByRole('tab', { name: 'Share', exact: true }).click();
   await page.getByRole('button', { name: 'Create briefing link' }).click();
   await expect(page.getByRole('link', { name: /test-briefing/ })).toBeVisible();
+  await page.getByRole('button', { name: /^Updates/ }).click();
+  await page.getByRole('button', { name: /Mountain holiday/ }).click();
+  await expect(
+    page.getByRole('tab', { name: 'What changed', exact: true }),
+  ).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('button', { name: 'All trips' }).click();
+  await page.getByLabel('Filter trips').fill('No such holiday');
+  await expect(
+    page.getByRole('heading', { name: 'No matching trips.' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Clear search' }).click();
+  await expect(
+    page.getByRole('button', { name: /Mountain holiday/ }),
+  ).toBeVisible();
   await page.getByRole('button', { name: 'Travel desk', exact: true }).click();
   await expect(
     page.getByRole('cell', { name: /Mountain holiday/ }),
@@ -459,4 +518,96 @@ test('Supabase confirmation and forgot-password screens explain the next step', 
     .getByRole('button', { name: 'Send reset link', exact: true })
     .click();
   await expect(page.getByText(/password-reset link will arrive/)).toBeVisible();
+});
+
+test('late place results cannot replace a new search and dates explain the invalid stop', async ({
+  page,
+}) => {
+  let releaseOldSearch;
+  let markRequested;
+  const requested = new Promise((resolve) => {
+    markRequested = resolve;
+  });
+  await page.route('**/api/auth/session', (r) =>
+    r.fulfill({
+      json: { user: { id: 'ux-user', name: 'Traveller' }, provider: 'local' },
+    }),
+  );
+  await page.route('**/api/workspace', (r) =>
+    r.fulfill({
+      json: {
+        workspace: { id: 'ux-workspace' },
+        monitoring: false,
+        persistent: true,
+      },
+    }),
+  );
+  let saves = 0;
+  await page.route('**/api/trips', (r) => {
+    if (r.request().method() === 'POST') saves++;
+    return r.fulfill({ json: { trips: [] } });
+  });
+  await page.route('**/api/locations?**', async (r) => {
+    const query = new URL(r.request().url()).searchParams.get('destination');
+    if (query === 'Delhi') {
+      await new Promise((resolve) => {
+        releaseOldSearch = async () => {
+          await r.fulfill({
+            json: { locations: [{ ...place, id: 'old-delhi' }] },
+          });
+          resolve();
+        };
+        markRequested();
+      });
+    } else
+      await r.fulfill({
+        json: {
+          locations: [
+            { ...place, id: 'new-jaipur', name: 'Jaipur', admin1: 'Rajasthan' },
+          ],
+        },
+      });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Plan my first trip' }).click();
+  const destination = page.getByLabel('Destination', { exact: true });
+  await destination.fill('Delhi');
+  await destination.press('Enter');
+  await requested;
+  await destination.fill('Jaipur');
+  await destination.press('Enter');
+  const jaipur = page.getByRole('button', { name: /Jaipur, Rajasthan/ });
+  await expect(jaipur).toBeVisible();
+  const oldResponse = page.waitForResponse((r) =>
+    r.url().includes('destination=Delhi'),
+  );
+  await releaseOldSearch();
+  await oldResponse;
+  await expect(jaipur).toBeVisible();
+  await expect(page.getByRole('button', { name: /Delhi · India/ })).toHaveCount(
+    0,
+  );
+  await jaipur.click();
+  await page.getByLabel('Arrival', { exact: true }).fill('2027-01-20');
+  await page
+    .getByRole('button', { name: '＋ Add another stop', exact: true })
+    .click();
+  await page.getByLabel('Destination', { exact: true }).nth(1).fill('Jaipur');
+  await page.getByLabel('Destination', { exact: true }).nth(1).press('Enter');
+  await page.getByRole('button', { name: /Jaipur, Rajasthan/ }).click();
+  await page.getByLabel('Arrival', { exact: true }).nth(1).fill('2027-01-19');
+  await page.getByLabel('Departure', { exact: true }).nth(1).fill('2027-01-19');
+  await page.getByRole('button', { name: 'Save itinerary' }).click();
+  await expect(page.getByRole('alert')).toContainText('Check stop 2');
+  expect(saves).toBe(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: '/tmp/tracerisk-trip-form-mobile.png',
+    fullPage: true,
+  });
 });

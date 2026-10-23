@@ -7,7 +7,8 @@ Start with the [README](README.md), [engineering decisions](DECISIONS.md), [API 
 1. Use Node.js 24 and run `npm ci` from the repository root.
 2. Copy `.env.example` to a local `.env` only if one does not exist; preserve existing values. Set the TinyFish key for live scans and leave unused optional credentials blank.
 3. Start development with `npm run dev`.
-4. Confirm the destination before scanning. A saved browser plan does not contain a reusable server confirmation ID.
+4. Open the root workspace, create a local account, then save a confirmed city/landmark itinerary. Choose Quick or Thorough to check it. The separate `/check` view retains its browser-only notebook.
+5. For cloud accounts, follow [Supabase setup](docs/SUPABASE_SETUP.md); configure Google separately using [Google login](docs/GOOGLE_SIGN_IN.md). Fixture tests do not need either service.
 
 Provider keys are not needed for the automated fixture tests. For a live scan, use your own authorized provider access and review quotas before repeated requests. Keep credentials and personal downloaded briefings out of commits and screenshots.
 
@@ -51,7 +52,7 @@ PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium npm run test:browser
 
 In PowerShell, set `$env:PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to the actual installed executable before running the browser command.
 
-Node tests cover server validation, sources and scoring, provider fallback, date windows, quotas, shared work, cancellation, planning helpers, and exported text. Browser tests cover confirmation, cancellation/retry, stored plans, themes, storage failure, source/signal filters, downloads, print warnings, and responsive widths. They use provider fixtures and do not establish live upstream or deployed behavior.
+Node tests cover server validation, authentication, SQLite persistence, Supabase ownership/leases, source verification, provider fallback, date windows, quotas and cancellation. Supabase tests apply the real migration in embedded PostgreSQL. Browser tests cover account flows, first-trip guidance, place confirmation, date repair, modal keyboard controls, search recovery, trip views, sharing, legacy exports and mobile layouts. They use provider fixtures and do not establish live upstream or deployed behavior.
 
 [CI](.github/workflows/ci.yml) runs install, Node tests, formatting, build, and Chromium tests on pushes and pull requests with Node.js 24. Do not claim a hosted CI run passed based only on local results. Documentation-only changes need formatting, relative-link/anchor checks, and a review against the implementation rather than unrelated application test runs.
 
@@ -61,20 +62,21 @@ Node tests cover server validation, sources and scoring, provider fallback, date
 - Preserve the distinction between search snippets, extracted pages, government domains, and forecast models. A cited link is not independent verification.
 - Keep the confirmed place consistent across search and weather. Do not accept arbitrary client coordinates as a substitute for confirmation.
 - Update regression coverage when changing scoring, source selection, provider fallback, cancellation, or rate limits.
-- Keep saved plans limited to trip metadata. Do not persist server IDs, credentials, or old risk assessments in the notebook.
-- Support keyboard navigation, visible focus, light/dark themes, narrow screens, and reduced motion. Avoid unnecessary provider calls from form shortcuts or save/restore actions.
+- Keep the `/check` browser notebook limited to trip metadata, without server confirmation IDs or assessment snapshots. Account trips and completed reports belong in ownership-checked server storage.
+- Support keyboard navigation, visible focus, light/dark themes, narrow screens, and reduced motion. Dialogs should keep focus inside, close with Escape, and return focus to the opener. Avoid unnecessary provider calls from form shortcuts or save/restore actions.
+- Write the next action in plain language. Hide optional detail until needed, provide useful empty states, and confirm successful saves/shares. Never show automatic monitoring as active when the server reports it disabled.
 - Keep risk/forecast limitations in exported text and printed views. Filtering should not hide the overall coverage warning.
 - Use the lockfile for dependency changes; do not add generated `node_modules/`, `dist/`, test results, or local `.env` files.
 
 ## Documentation to update with behavior changes
 
-| Change                                                                         | Documentation                                                 |
-| ------------------------------------------------------------------------------ | ------------------------------------------------------------- |
-| User workflow, features, or stack                                              | `README.md` and, when relevant, `AZINHACK_SUBMISSION.md`.     |
-| Scoring, evidence, coverage, fallback, state, or privacy tradeoffs             | `DECISIONS.md`.                                               |
-| Routes, fields, status codes, confirmation, or cache behavior                  | `docs/API.md`.                                                |
-| Environment settings, hosting, network destinations, proxy contract, or limits | `docs/DEPLOYMENT.md` and `.env.example` when settings change. |
-| Scripts, tests, or CI expectations                                             | This guide and the actual workflow/configuration.             |
+| Change                                                                         | Documentation                                                                   |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| User workflow, features, or stack                                              | `README.md`, `docs/USER_GUIDE.md` and, when relevant, `AZINHACK_SUBMISSION.md`. |
+| Scoring, evidence, coverage, fallback, state, or privacy tradeoffs             | `DECISIONS.md`.                                                                 |
+| Routes, fields, status codes, confirmation, or cache behavior                  | `docs/API.md`.                                                                  |
+| Environment settings, hosting, network destinations, proxy contract, or limits | `docs/DEPLOYMENT.md` and `.env.example` when settings change.                   |
+| Scripts, tests, or CI expectations                                             | This guide and the actual workflow/configuration.                               |
 
 For screenshots, use known illustrative or fixture data and label it accordingly. Do not present UI previews as evidence of live provider success.
 

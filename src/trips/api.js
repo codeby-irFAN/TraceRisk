@@ -40,7 +40,26 @@ export async function api(
   return data;
 }
 export const when = (value) =>
-  value ? new Date(value).toLocaleString() : 'Not checked yet';
+  value
+    ? new Date(value).toLocaleString(undefined, {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      })
+    : 'Not checked yet';
+export const dateLabel = (value) =>
+  value
+    ? new Date(`${value}T12:00:00Z`).toLocaleDateString(undefined, {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        timeZone: 'UTC',
+      })
+    : '';
+export const dateRange = (start, end) =>
+  start === end ? dateLabel(start) : `${dateLabel(start)} – ${dateLabel(end)}`;
 export const place = (location) =>
   [...new Set([location?.name, location?.city, location?.admin1])]
     .filter(Boolean)

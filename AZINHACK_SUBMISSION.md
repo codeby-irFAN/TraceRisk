@@ -1,76 +1,71 @@
-# TraceRisk — Azinhack project brief
+# TraceRisk — Azinhack 2026 project brief
 
-## Summary
+## The idea
 
-**The travel field guide for India.** TraceRisk helps travellers turn scattered local reports, official notices, and forecasts into a source-linked briefing for a confirmed Indian destination and travel dates. A persistent trip workspace follows the journey with multi-city itineraries, route checks, change alerts and shareable evidence.
+**One trip. Clear updates. Practical next steps.**
 
-[Current setup and features](README.md) · [Demo recording](https://drive.google.com/file/d/1RIJOVODbjnc7rzDPaioiRQqtznZLq5oE/view?usp=drivesdk) · [Engineering decisions](DECISIONS.md)
+TraceRisk helps travellers in India understand what could affect a journey. Instead of searching separately for road updates, local news and weather, users save a trip and get a source-linked briefing for their places and dates.
 
-This brief describes the current implementation. The recording is a separate demonstration and is not proof of current provider connectivity.
+[Website](https://tracerisk.onrender.com/) · [README](README.md) · [User guide](docs/USER_GUIDE.md) · [Engineering decisions](DECISIONS.md)
+
+This is the current project brief, not a statement that every event requirement has been independently checked. Confirm submission format and judging requirements against the organisers’ published rules.
 
 ## The problem
 
-Travel-relevant information is spread across transport updates, government notices, local news, weather forecasts, and regional reporting. A traveller must identify the correct place, compare sources, and judge whether each report applies to their dates. Incomplete information can also be mistaken for an all-clear.
+A destination may look fine while the journey is disrupted. Useful updates are scattered, dates can be unclear, and travellers need to know what to do after finding a problem.
 
-## The approach
+## How it works
 
-TraceRisk first asks the traveller to confirm the resolved city, district, and state. Eight targeted TinyFish search lanes then collect travel-relevant leads alongside Open-Meteo daily forecast and river-discharge data for the same location. The backend selects and extracts source pages, attempts optional Groq review, and can fall back to labelled deterministic triage. Findings retain source links and collection context.
+1. Sign in and save a city or landmark itinerary with dates and travel mode.
+2. Run Quick or Thorough. The backend retrieves reports and forecasts, checks place/date relevance and retains source quotations.
+3. Review travel updates, evidence and practical checks. Save a briefing or follow changes in Trip Watch.
 
-The interface uses an ivory, forest-green, and terracotta travel-journal theme with dark mode, keyboard access, responsive layouts, and reduced-motion behavior.
+The interface uses a simple ivory/forest-green theme, guided first-trip steps, readable dates, mobile layouts and optional details rather than technical labels in the main flow.
 
-## Implemented features
+## What is implemented
 
-- Route map with source-supported event locations, regional findings and up to two dated corridor checks.
-- Persistent Trip Watch with configurable checks and meaningful in-app change alerts.
-- Actual alternative-road/date rechecks with evidence, forecast coverage and driving-time comparisons.
-- Up to six dated stops per itinerary and 50 trips per private workspace.
-- Evidence panel with quotations, event-date basis, affected area, publisher support, conflicts and collection time.
-- Travel-mode and accessibility/family/air-quality preferences with practical impact guidance.
-- Client travel desk, agency branding and seven-day revocable public briefing snapshots.
-- Evidence-grounded trip assistant with citations and explicit information limits.
-- Existing Quick Check, daily weather/river data, browser notebook, text export and printable views.
-- Node regression tests, Playwright browser tests and GitHub Actions checks.
+| Feature                | Demonstrate                                                                                                      |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Multi-city itinerary   | Up to six confirmed cities/landmarks, with dates for each stop.                                                  |
+| Route-aware map        | Road geometry, supported alternatives and source-supported incident markers; regional reports listed separately. |
+| Trip Watch             | Scheduled checks and meaningful in-app change alerts when the host is available.                                 |
+| Alternative comparison | Recheck a later departure or supported road option without changing the original plan.                           |
+| Evidence verification  | Quotations, original links, event dates, affected areas, supporting/conflicting sources.                         |
+| Personal impact        | Car/bus/motorcycle/train/flight and optional family, mobility and air-quality needs.                             |
+| Travel-agent desk      | Client trips, branding, seven-day revocable briefing links and print/PDF.                                        |
+| Trip assistant         | Answers grounded in saved trip evidence, with citations and explicit missing information.                        |
+| Accounts               | Local email/password or Supabase cloud authentication/storage; Google login when configured.                     |
+
+## Simple presentation walkthrough
+
+1. **Problem:** explain how scattered information makes trip planning difficult.
+2. **Plan:** create a trip such as Qutub Minar, Delhi → Hawa Mahal, Jaipur. Confirm places and dates.
+3. **Check:** choose Quick or Thorough. Explain that the longer option reads more sources, not that it guarantees more incidents.
+4. **Result:** show the overview, practical checks and one original source in Evidence.
+5. **Journey:** show the route map and a date comparison when provider data is available.
+6. **Follow-up:** open What changed, ask the assistant a question, then create a briefing link.
+7. **Business:** explain the proposed revenue options below and the current limits.
+
+Use labelled fixtures or screenshots if live providers are unavailable. Do not present demonstration reports as current real-world conditions.
+
+## Monetization proposal
+
+- **Sponsored hotel listings:** clearly labelled ads near a traveller’s planned stops. Sponsorship must not affect disruption findings or imply that a hotel/location is certified safe.
+- **Trip passes:** paid monitoring for a particular journey, with a clear service period and alert delivery terms.
+- **Travel-agent subscription:** client trip management, branded briefings and monitoring capacity.
+
+These are business ideas. Payments, hotel ads, paid plans and shared team roles are not implemented. An ad-funded launch needs appropriate commercial provider/weather rights and reliable hosting.
 
 ## Technology
 
-| Layer                    | Implementation                                                                                         |
-| ------------------------ | ------------------------------------------------------------------------------------------------------ |
-| Interface                | React 19, Vite 7, Lucide React, CSS themes and transitions.                                            |
-| Server                   | Node.js 24+ and Express 5 with SQLite persistence.                                                     |
-| Discovery and extraction | TinyFish Search and Fetch.                                                                             |
-| Assessment               | Groq quotation selection, deterministic fallback.                                                      |
-| Place and forecasts      | Open-Meteo geocoding, daily forecasts, and river-discharge models; optional external Worker transport. |
-| Verification             | Node's test runner, Playwright/Chromium, Prettier, and production builds.                              |
+React 19/Vite 7 interface; Express 5/Node.js 24 backend; SQLite locally or Supabase Auth/PostgreSQL in cloud mode. TinyFish provides search/page extraction, with independent Google News RSS/GDELT discovery for Thorough checks. Groq is optional for quotation selection. Place/weather providers and OSRM/OpenStreetMap support location, forecast and map features.
 
-## Suggested walkthrough
+Quick has about 20 seconds per place and a 110-second full-trip processing limit. Thorough allows 90 seconds per place and eight minutes per itinerary. Network/hosting delays are additional; jobs can finish sooner. Automated verification includes Node regressions, actual SQL migration tests in embedded PostgreSQL and Playwright browser workflows. See [evaluation](docs/EVALUATION.md) for measured samples and their limits.
 
-1. Create an account or sign in. Explain that the saved trips belong to this account.
-2. Create a trip with an origin, confirmed city or landmark (for example Hawa Mahal, Jaipur) and dates. Add another stop and select the travel mode and relevant needs.
-3. Run a check. Show the itinerary and practical departure checks; explain which date windows have forecast coverage.
-4. Open Evidence and follow an original source. Explain the event-date basis, source support and any conflicting report.
-5. Open Route map. Distinguish itinerary markers, supported incident points and unlocated regional findings. Explain when routing is unavailable.
-6. Open What changed and show configurable Trip Watch frequency. New/changed/not-observed/resolved have different meanings; missing a report never proves a disruption cleared.
-7. Compare a later departure and, when supplied by the routing provider, a different road option. Discuss coverage and impact rather than claiming fewer reports means safer.
-8. Ask the trip assistant about bus travel or departure checks. Follow a citation.
-9. Open Travel desk, set agency branding in Settings, and create a briefing link with client-name inclusion off by default. Print/save the briefing as PDF.
+## What to explain honestly
 
-Live web retrieval requires a valid TinyFish key and provider access; Groq is optional. A single place retains its short processing budget, while a full itinerary can take up to 110 seconds. Reliable Trip Watch requires an always-running host and persistent disk. The free Render blueprint does not provide durable monitoring. External routing/GDACS live access was blocked by the cloud testing proxy; describe fixture tests separately from live results.
+TraceRisk supports travel awareness; it is not an official safety rating. Missing reports do not prove safety, and a disappearing report is not automatically resolved. Search can miss local-language or very recent events. Forecasts are model-derived and date-limited. Road estimates exclude live traffic; train/flight routes and timetables are unsupported. Corridor checks sample areas, not every segment.
 
-## Why coverage is part of the product
+Trip Watch needs an available host; Render Free can sleep. Alerts are in-app, not email/SMS/push. Cloud login needs owner-configured Supabase/Google settings and SQL migration. No independently established accuracy percentage or publication-grade reliability is claimed.
 
-TraceRisk separates evidence collection from the presence of findings. A zero score, empty issue list, or successful HTTP request is not proof of safety. Even adequate collection is not exhaustive. AI output can be wrong, old advisories can be stale, and forecasts are not official warnings. Users are directed back to authorities and transport operators for important decisions.
-
-## Current limitations
-
-Search may miss new or local-language reporting. Place matching depends on geocoding coverage and user selection. News, extraction, weather, and model access can fail or run out of quota. Rule scores and weather thresholds are heuristics rather than calibrated forecasts. Workspace access uses email/password sign-in; email reset delivery and shared team roles are not configured. Process-local limits/caches do not coordinate multiple server instances. Corridor checks sample areas, not every road segment; train/flight routes and live traffic are unsupported.
-
-## Future work
-
-- Evaluate retrieval freshness and location/date relevance against a curated set of travel incidents and standing advisories.
-- Add multilingual retrieval and measure coverage rather than assuming translation solves local reporting gaps.
-- Validate or revise scoring/confidence against an independently reviewed dataset.
-- Introduce shared rate-limit/job storage and deployment observability for multi-instance operation.
-- Expand live-provider contract checks without making ordinary CI depend on credentials or paid requests.
-- Add broader accessibility testing and user research with travellers.
-
-These are planned improvements, not implemented or validated capabilities. TraceRisk remains a travel-awareness prototype, not an emergency service or official risk assessment.
+The next priorities are broader retrieval evaluation, multilingual coverage, reliable monitoring infrastructure and user testing with travellers and agents.
